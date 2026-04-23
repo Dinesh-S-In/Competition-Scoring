@@ -1,17 +1,17 @@
 # Competition judging app
 
-Vanilla HTML/CSS/JS, `styles.css`, and one shared `app.js`. There is no JavaScript build step. Each judge is meant to get **their own HTML page** (e.g. `test-name.html`) with their name set in a small script block. The public **index** page is only a short “use your link” message—there is no judge name picker in the app anymore.
+Vanilla HTML/CSS/JS, `styles.css`, and one shared `app.js`. There is no JavaScript build step. Each judge is meant to get **their own HTML page** (e.g. `example-smith.html`, cloned from the sample) with their name set in a small script block. The public **index** page is a minimal home with the current sample **Example SMITH**—there is no judge name picker in the app.
 
 - **Scoring + Git merge:** [Vercel](#deploy-on-vercel) (run `npx vercel` or connect the repo) so the `/api/submit` serverless route can run.
 - **Static only:** [GitHub Pages](#github-pages) can host the files, but **submissions will not** be written back into the repository from the browser. Use Vercel if you need the combined file in `data/submissions.json`.
 
 ## Judge pages (clone per person)
 
-1. Open `test-name.html` as a reference. It includes:
+1. Open `example-smith.html` as a reference. It includes:
 
    ```html
    <script>
-     window.__JUDGE_PAGE = { name: "Test Name" };
+     window.__JUDGE_PAGE = { name: "Example SMITH" };
    </script>
    ```
 
@@ -25,7 +25,7 @@ Vanilla HTML/CSS/JS, `styles.css`, and one shared `app.js`. There is no JavaScri
 1. Push the repository to GitHub, GitLab, or Bitbucket and import it in the [Vercel](https://vercel.com) dashboard, or run `npx vercel` from the project root.
 2. **Framework / build:** `vercel.json` uses **Other** with no build command. The **Output Directory** can be left as default (the project root), not a `dist` folder.
 3. Add the [environment variables](#environment-variables) for GitHub.
-4. Deploy. Static pages and `api/submit` are available at your project URL (e.g. `https://your-project.vercel.app/test-name.html`).
+4. Deploy. Static pages and `api/submit` are available at your project URL (e.g. `https://your-project.vercel.app/example-smith.html`).
 
 ### Merged submissions in Git (Excel-friendly JSON)
 
@@ -55,4 +55,4 @@ See `.env.example` for a template (do not commit real tokens).
 
 ## Local use
 
-From this directory, run a static server (e.g. `npx serve .`) and open `index.html` or a judge page like `test-name.html`. A plain `file://` open may not call `/api/submit` correctly; use a local server. Without Vercel env, submissions still **save in the browser** (per judge) via `localStorage`.
+From this directory, run a static server (e.g. `npx serve .`) and open `index.html` or a judge page like `example-smith.html`. A plain `file://` open may not call `/api/submit` correctly; use a local server. Without Vercel env, submissions still **save in the browser** (per judge) via `localStorage`.

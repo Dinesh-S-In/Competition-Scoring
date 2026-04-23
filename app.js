@@ -778,7 +778,7 @@ function init() {
   if (!isJudgePage()) {
     if (els.welcomeHint) {
       els.welcomeHint.textContent =
-        "This judge app must be opened from a named page (e.g. test-name.html) with a judge set in the page. Use the link you were given.";
+        "This judge app must be opened from a named page (e.g. example-smith.html) with a judge set in the page. Use the link you were given.";
     }
     return;
   }
