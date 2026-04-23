@@ -5,6 +5,8 @@ desktop.ini
 
 # Vercel (local link, not the project config)
 .vercel/
+.env
+.env.*.local
 
 # Editor
 .vscode/

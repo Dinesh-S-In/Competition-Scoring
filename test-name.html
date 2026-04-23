@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Judging — Test Name</title>
+    <meta
+      name="description"
+      content="Competition scoring for one judge. Choose a team and submit scores."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+
+  <body>
+    <script>
+      // Clone this file per judge; change only the name string below and the page title.
+      window.__JUDGE_PAGE = { name: "Test Name" };
+    </script>
+    <div class="bg-page" aria-hidden="true">
+      <div class="bg-grid"></div>
+    </div>
+
+    <header class="topbar">
+      <div class="container topbar__inner">
+        <div class="brand">
+          <div class="brand__mark" aria-hidden="true">
+            <span class="brand__dot"></span>
+          </div>
+          <div class="brand__text">
+            <div class="brand__title" id="eventTitle">Competition Scoring</div>
+            <div class="brand__subtitle" id="eventSubtitle">
+              Fast, consistent judging with weighted criteria.
+            </div>
+          </div>
+        </div>
+
+        <div class="topbar__context" id="topbarContext" hidden>
+          <div class="topbar__judge" id="topbarJudge" aria-live="polite">—</div>
+        </div>
+
+        <nav class="topnav" aria-label="Primary">
+          <button class="tab is-active" data-nav="welcome" type="button">Welcome</button>
+          <button class="tab" data-nav="score" type="button" disabled>Scoring</button>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="view is-active" id="view-welcome" data-view="welcome">
+        <div class="welcomePage">
+          <div class="card card--hero card--welcome">
+            <div class="chip">Scoring</div>
+            <h1 class="h1" id="welcomeTitle">Welcome, judge</h1>
+            <p class="muted lead" id="eventDescription">
+              Select a team, then enter marks on the next page. You only see this judge’s form—not other judges’ scores. Submissions are merged on the organiser’s side when the site is connected to the repository.
+            </p>
+
+            <div class="form form--stack form--welcome">
+              <label class="field">
+                <span class="field__label">Team</span>
+                <select id="teamSelect" class="input" required></select>
+              </label>
+
+              <button id="startBtn" class="btn btn--primary" type="button">Continue to scoring</button>
+              <div class="hint" id="welcomeHint" role="status" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-score" data-view="score">
+        <div class="card card--scoreHeader">
+          <div class="scoreHeader">
+            <div>
+              <div class="kicker" id="scoreKicker">Scoring</div>
+              <div class="teamPill" id="teamPill" aria-label="Current team">Team —</div>
+              <div class="h2 h2--team" id="scoreContext">—</div>
+              <div class="muted" id="scoreContextMeta">
+                Enter all criterion scores, your standout text, and award, then <strong>Submit</strong> to return to the welcome page.
+              </div>
+            </div>
+
+            <div class="totalBox" aria-label="Weighted total">
+              <div class="totalBox__label">Weighted total (out of 10)</div>
+              <div class="totalBox__value">
+                <span id="totalValue">0.0</span><span class="totalBox__unit">/ 10</span>
+              </div>
+              <div class="totalBox__grade" id="totalGrade">—</div>
+              <div class="totalBox__hint muted" id="totalHint">Auto-calculated using the weights on each card.</div>
+            </div>
+          </div>
+
+          <div class="scoreHeader__actions">
+            <button class="btn" id="backToWelcomeBtn" type="button">Back to welcome</button>
+          </div>
+        </div>
+
+        <form class="card card--scoreBody" id="scoreForm">
+          <div class="scaleCallout" role="note" aria-label="Scoring scale">
+            <div class="scaleCallout__badge">0–10 scale</div>
+            <div class="scaleCallout__text">
+              <strong>Score each dimension from 0 to 10</strong> — 0 = no evidence / not
+              demonstrated, 10 = exceptional. Your weighted total (out of 10) updates live.
+            </div>
+          </div>
+
+          <div class="sectionRubric">
+            <span class="sectionRubric__line" aria-hidden="true"></span>
+            <span class="sectionRubric__label">Scoring criteria</span>
+            <span class="sectionRubric__line" aria-hidden="true"></span>
+          </div>
+
+          <div id="criteriaContainer" class="criteria"></div>
+          <div id="breakdownContainer" class="breakdown" hidden></div>
+          <div class="divider"></div>
+
+          <div class="grid grid--2">
+            <label class="field">
+              <span class="field__label">Standout moment <span class="tag-req" aria-label="required">*</span></span>
+              <textarea
+                id="standoutField"
+                class="input textarea"
+                rows="5"
+                required
+                placeholder="Required. What stood out for this team overall?"
+              ></textarea>
+            </label>
+
+            <div class="field">
+              <div class="field__label field__label--mono">Award nomination (select one)</div>
+              <div class="radioGrid" id="awardOptions" role="radiogroup" aria-label="Award nomination"></div>
+              <div class="hint" id="awardHint">Select the single best-fit category for this team.</div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn btn--primary" id="submitBtn" type="submit">Submit</button>
+            <button class="btn btn--ghost" id="resetBtn" type="button">Reset form</button>
+          </div>
+
+          <div class="hint" id="scoreHint" role="status" aria-live="polite"></div>
+        </form>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container footer__inner">
+        <div class="muted">
+          This page is for one judge. Scores are stored in your browser and also sent to
+          <code>data/submissions.json</code> in the project repository when the Vercel server is
+          configured.
+        </div>
+      </div>
+    </footer>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1,27 +1,14 @@
 /* 
   Competition Judging App (vanilla JS)
-  - Local-first prototype using localStorage
-  - Simple “views” so you can later swap HTML blocks easily
-  - Data layer is isolated so it can later be replaced with Supabase calls
+  - localStorage (per-judge when using a named judge page)
+  - optional POST to /api/submit to merge into data/submissions.json on GitHub
 */
 
 const APP_CONFIG = {
   eventTitle: "Competition Scoring",
   eventSubtitle: "Fast, consistent judging with weighted criteria.",
-  eventDescription:
-    "Select judge and team, score on the next page, then submit to return here. Your entries for the selected judge are listed below.",
 
   storageKey: "judgeApp.submissions.v2",
-
-  judges: [
-    "Vaibhav Shah",
-    "Eric Shea",
-    "Sachin Khairnar",
-    "Matthew Rupas",
-    "Jonathan Kletzel",
-    "Peter Frank",
-    "Sri Balakrishnan",
-  ],
 
   teams: Array.from({ length: 8 }, (_, i) => `Team ${i + 1}`),
 
@@ -132,6 +119,17 @@ const APP_CONFIG = {
   ],
 };
 
+function isJudgePage() {
+  return (
+    typeof window !== "undefined" && window.__JUDGE_PAGE && String(window.__JUDGE_PAGE.name || "").trim()
+  );
+}
+
+function getJudgeNameFromConfig() {
+  if (!isJudgePage()) return "";
+  return String(window.__JUDGE_PAGE.name).trim();
+}
+
 const GRADE_MAP = [
   [9.5, "A+ · Exceptional"],
   [8.5, "A · Outstanding"],
@@ -186,29 +184,18 @@ function formatDateTime(iso) {
   });
 }
 
-function escapeCsv(value) {
-  const s = String(value ?? "");
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}
+// ---------- Data layer (localStorage; server merge via /api/submit) ----------
 
-function downloadTextFile(filename, text) {
-  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+function getStorageKey() {
+  if (isJudgePage()) {
+    return `${APP_CONFIG.storageKey}::${encodeURIComponent(getJudgeNameFromConfig())}`;
+  }
+  return APP_CONFIG.storageKey;
 }
-
-// ---------- Data layer (localStorage now; easy to swap later) ----------
 
 function loadSubmissions() {
   try {
-    const raw = localStorage.getItem(APP_CONFIG.storageKey);
+    const raw = localStorage.getItem(getStorageKey());
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed : [];
   } catch {
@@ -217,7 +204,7 @@ function loadSubmissions() {
 }
 
 function saveSubmissions(submissions) {
-  localStorage.setItem(APP_CONFIG.storageKey, JSON.stringify(submissions));
+  localStorage.setItem(getStorageKey(), JSON.stringify(submissions));
 }
 
 function makeJudgeTeamKey(judge, team) {
@@ -235,15 +222,25 @@ function addSubmission(submission) {
   saveSubmissions(submissions);
 }
 
-function clearAllSubmissions() {
-  saveSubmissions([]);
-}
-
-function getSubmissionsForJudge(judge) {
-  if (!judge) return [];
-  return loadSubmissions()
-    .filter((s) => s.judge === judge)
-    .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+async function postSubmissionToServer(submission) {
+  const headers = { "Content-Type": "application/json" };
+  if (window.__JUDGE_PAGE && window.__JUDGE_PAGE.ingestKey) {
+    headers["x-ingest-key"] = String(window.__JUDGE_PAGE.ingestKey);
+  }
+  try {
+    const r = await fetch("/api/submit", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(submission),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      return { ok: false, git: Boolean(j.git), error: j.error || `HTTP ${r.status}` };
+    }
+    return { ok: true, ...j };
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : String(e) };
+  }
 }
 
 // ---------- App state ----------
@@ -254,7 +251,6 @@ const state = {
     judge: "",
     team: "",
   },
-  // live draft scores
   draft: {
     scores: Object.fromEntries(APP_CONFIG.criteria.map((c) => [c.id, 0])),
     standoutMoment: "",
@@ -265,29 +261,16 @@ const state = {
 // ---------- DOM elements ----------
 
 const els = {
-  // top
   tabs: Array.from(document.querySelectorAll("[data-nav]")),
-
-  // welcome
   eventTitle: $("#eventTitle"),
   eventSubtitle: $("#eventSubtitle"),
   eventDescription: $("#eventDescription"),
   welcomeTitle: $("#welcomeTitle"),
-  judgeSelect: $("#judgeSelect"),
   teamSelect: $("#teamSelect"),
   startBtn: $("#startBtn"),
   welcomeHint: $("#welcomeHint"),
-  judgedBox: $("#judgedBox"),
-  judgedKicker: $("#judgedKicker"),
-  judgedHeading: $("#judgedHeading"),
-  judgedSub: $("#judgedSub"),
-  judgedList: $("#judgedList"),
-
-  // top bar
   topbarContext: $("#topbarContext"),
   topbarJudge: $("#topbarJudge"),
-
-  // score
   scoreKicker: $("#scoreKicker"),
   teamPill: $("#teamPill"),
   scoreContext: $("#scoreContext"),
@@ -304,24 +287,20 @@ const els = {
   submitBtn: $("#submitBtn"),
   resetBtn: $("#resetBtn"),
   scoreHint: $("#scoreHint"),
-  successState: $("#successState"),
-  successToRecordsBtn: $("#successToRecordsBtn"),
-  scoreAnotherBtn: $("#scoreAnotherBtn"),
   backToWelcomeBtn: $("#backToWelcomeBtn"),
-  goRecordsBtn: $("#goRecordsBtn"),
-
-  // records
-  exportCsvBtn: $("#exportCsvBtn"),
-  clearAllBtn: $("#clearAllBtn"),
-  recordsMeta: $("#recordsMeta"),
-  recordsTbody: $("#recordsTbody"),
-  recordsHint: $("#recordsHint"),
-
 };
+
+// ---------- Judge name resolution ----------
+
+function getJudgeName() {
+  if (isJudgePage()) return getJudgeNameFromConfig();
+  return "";
+}
 
 // ---------- Rendering ----------
 
 function setHint(el, message, tone = "muted") {
+  if (!el) return;
   el.textContent = message || "";
   el.classList.remove("hint--good", "hint--bad", "hint--warn");
   if (tone === "good") el.classList.add("hint--good");
@@ -349,11 +328,19 @@ function setTabEnabled(view, enabled) {
 function renderEventText() {
   els.eventTitle.textContent = APP_CONFIG.eventTitle;
   els.eventSubtitle.textContent = APP_CONFIG.eventSubtitle;
-  if (els.eventDescription) els.eventDescription.textContent = APP_CONFIG.eventDescription;
-  if (els.welcomeTitle) els.welcomeTitle.textContent = "Welcome, judge";
+  if (els.eventDescription) {
+    els.eventDescription.textContent = isJudgePage() && getJudgeNameFromConfig()
+      ? "Choose a team, score on the next page, and submit. Scores are copied to the organiser repository when the server is configured, and also kept on this device for your session."
+      : APP_CONFIG.eventDescription;
+  }
+  if (els.welcomeTitle) {
+    const name = getJudgeName();
+    els.welcomeTitle.textContent = name ? `Welcome, ${name}` : "Welcome, judge";
+  }
 }
 
 function fillSelect(selectEl, options, placeholder = "Select...") {
+  if (!selectEl) return;
   selectEl.innerHTML = "";
   const ph = document.createElement("option");
   ph.value = "";
@@ -361,7 +348,6 @@ function fillSelect(selectEl, options, placeholder = "Select...") {
   ph.disabled = true;
   ph.selected = true;
   selectEl.appendChild(ph);
-
   for (const opt of options) {
     const o = document.createElement("option");
     o.value = opt;
@@ -380,55 +366,16 @@ function setTopbarJudge(visible, judgeName) {
   els.topbarJudge.innerHTML = `<span class="tj-label">Judge</span>${escapeHtml(judgeName)}`;
 }
 
-function renderWelcomeJudgedList() {
-  const judge = els.judgeSelect?.value;
-  const subs = getSubmissionsForJudge(judge);
-  if (!els.judgedBox) return;
-
-  if (!judge) {
-    els.judgedBox.hidden = true;
-    if (els.welcomeTitle) els.welcomeTitle.textContent = "Welcome, judge";
-    return;
-  }
-
-  if (els.welcomeTitle) els.welcomeTitle.textContent = `Welcome, ${judge}`;
-
-  if (subs.length === 0) {
-    els.judgedBox.hidden = true;
-    return;
-  }
-
-  els.judgedBox.hidden = false;
-  if (els.judgedHeading) els.judgedHeading.textContent = "Teams you’ve scored";
-  if (els.judgedSub) {
-    els.judgedSub.textContent = `${subs.length} submission${subs.length === 1 ? "" : "s"} for this judge on this device.`;
-  }
-  if (els.judgedList) {
-    els.judgedList.innerHTML = subs
-      .map(
-        (s) => `
-      <li class="judgedList__item">
-        <span class="judgedList__team">${escapeHtml(s.team)}</span>
-        · Weighted ${Number(s.total ?? 0).toFixed(1)}/10
-        · <span class="judgedList__t">${formatDateTime(s.submittedAt)}</span>
-      </li>`,
-      )
-      .join("");
-  }
-}
-
 function renderWelcome() {
-  const prevJudge = els.judgeSelect?.value;
-  fillSelect(els.judgeSelect, APP_CONFIG.judges, "— Choose judge (e.g. Vaibhav Shah) —");
-  fillSelect(els.teamSelect, APP_CONFIG.teams, "— Choose team —");
-  if (prevJudge && APP_CONFIG.judges.includes(prevJudge)) {
-    els.judgeSelect.value = prevJudge;
+  if (els.teamSelect) {
+    fillSelect(els.teamSelect, APP_CONFIG.teams, "— Choose team —");
   }
   setHint(els.welcomeHint, "");
-  renderWelcomeJudgedList();
+  renderEventText();
 }
 
 function renderAwardOptions() {
+  if (!els.awardOptions) return;
   els.awardOptions.innerHTML = "";
   for (const opt of APP_CONFIG.awardOptions) {
     const label = document.createElement("label");
@@ -452,6 +399,7 @@ function renderAwardOptions() {
 }
 
 function renderCriteria() {
+  if (!els.criteriaContainer) return;
   els.criteriaContainer.innerHTML = "";
 
   for (const c of APP_CONFIG.criteria) {
@@ -508,8 +456,8 @@ function renderCriteria() {
 
     els.criteriaContainer.appendChild(row);
 
-    const range = $(`#range-${c.id}`);
-    const numEl = $(`#num-${c.id}`);
+    const range = document.getElementById(`range-${c.id}`);
+    const numEl = document.getElementById(`num-${c.id}`);
 
     row.classList.toggle("is-active-score", score > 0);
 
@@ -525,7 +473,6 @@ function renderCriteria() {
 }
 
 function computeWeightedTotal() {
-  // Weighted average where each criterion is 0..10, weights sum to 1.0
   return APP_CONFIG.criteria.reduce((sum, c) => {
     const s = state.draft.scores[c.id] ?? 0;
     return sum + s * c.weight;
@@ -587,76 +534,24 @@ function renderScoreContext() {
 
   const locked = hasSubmissionFor(judge, team);
   if (locked) {
-    els.scoreContextMeta.textContent =
-      "This team is already submitted for you. Use Back to welcome to pick another team.";
-    els.submitBtn.disabled = true;
+    if (els.scoreContextMeta) {
+      els.scoreContextMeta.textContent =
+        "This team is already submitted for you. Use Back to welcome to pick another team.";
+    }
+    if (els.submitBtn) els.submitBtn.disabled = true;
     setHint(
       els.scoreHint,
       "Already submitted. Go back to the welcome page and select a different team.",
       "warn",
     );
   } else {
-    els.scoreContextMeta.textContent =
-      "Use the 0–10 scale on each card, then required Standout moment, award, and Submit.";
-    els.submitBtn.disabled = false;
+    if (els.scoreContextMeta) {
+      els.scoreContextMeta.textContent =
+        "Use the 0–10 scale on each card, then required Standout moment, award, and Submit.";
+    }
+    if (els.submitBtn) els.submitBtn.disabled = false;
     setHint(els.scoreHint, "");
   }
-}
-
-function renderSuccessState(show) {
-  els.successState.hidden = !show;
-  if (show) {
-    els.scoreForm.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-}
-
-function renderRecords() {
-  const submissions = loadSubmissions();
-  els.recordsTbody.innerHTML = "";
-  els.recordsMeta.textContent = `${submissions.length} submission${submissions.length === 1 ? "" : "s"} stored locally.`;
-  setHint(els.recordsHint, "");
-
-  if (submissions.length === 0) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td colspan="12" class="muted" style="padding: 16px 12px;">
-        No submissions yet. Start on the Welcome page to create your first score.
-      </td>
-    `;
-    els.recordsTbody.appendChild(tr);
-    return;
-  }
-
-  for (const s of submissions) {
-    const g = s.grade ?? gradeFromTotal(s.total ?? 0);
-    const sc = s.scores || {};
-    const cell = (id) => {
-      const v = sc[id];
-      if (v == null || v === "") return "—";
-      return String(v);
-    };
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${formatDateTime(s.submittedAt)}</td>
-      <td>${s.judge}</td>
-      <td>${s.team}</td>
-      <td class="table__num"><strong>${Number(s.total ?? 0).toFixed(1)}</strong></td>
-      <td class="table__grade" title="${String(g).replace(/"/g, "&quot;")}">${g}</td>
-      <td class="table__num">${cell("bi")}</td>
-      <td class="table__num">${cell("fs")}</td>
-      <td class="table__num">${cell("ai")}</td>
-      <td class="table__num">${cell("in")}</td>
-      <td class="table__num">${cell("cs")}</td>
-      <td>${humanizeAward(s.award)}</td>
-      <td class="muted">${(s.standoutMoment || s.overallFeedback || "").slice(0, 180)}${(s.standoutMoment || s.overallFeedback || "").length > 180 ? "…" : ""}</td>
-    `;
-    els.recordsTbody.appendChild(tr);
-  }
-}
-
-function humanizeAward(id) {
-  const opt = APP_CONFIG.awardOptions.find((o) => o.id === id);
-  return opt ? opt.title : "—";
 }
 
 // ---------- Actions ----------
@@ -674,7 +569,6 @@ function startScoring(judge, team) {
 
   if (els.standoutField) els.standoutField.value = "";
   renderTotal();
-  renderSuccessState(false);
 }
 
 function goWelcome() {
@@ -687,22 +581,44 @@ function goWelcome() {
 }
 
 /**
- * After a successful submit: back to welcome with the same judge selected
- * and the “teams you’ve judged” list updated.
  * @param {string} judge
+ * @param {Record<string, unknown> | null} [server]
  */
-function returnToWelcomeAfterScoring(judge) {
+function returnToWelcomeAfterScoring(judge, server) {
   state.selection.team = "";
   state.selection.judge = "";
   setTopbarJudge(false);
   setTabEnabled("score", false);
   setView("welcome");
-  fillSelect(els.judgeSelect, APP_CONFIG.judges, "— Choose judge (e.g. Vaibhav Shah) —");
-  fillSelect(els.teamSelect, APP_CONFIG.teams, "— Choose team —");
-  if (judge && APP_CONFIG.judges.includes(judge)) els.judgeSelect.value = judge;
-  setHint(els.welcomeHint, "Score saved. You’re back on the welcome page — choose a team to continue.", "good");
-  renderWelcomeJudgedList();
+  setHint(els.scoreHint, "");
+  if (server && server.ok && server.git) {
+    setHint(
+      els.welcomeHint,
+      "Score saved and synced to the organiser’s repository. Choose a team to continue when ready.",
+      "good",
+    );
+  } else if (server && server.ok && !server.git) {
+    setHint(
+      els.welcomeHint,
+      "Score saved on this device. Cloud backup is not enabled on the server; ask the organiser to set GitHub in Vercel, or your score still exists only in the browser for now.",
+      "warn",
+    );
+  } else if (server && server.error) {
+    setHint(
+      els.welcomeHint,
+      `Score saved on this device. Server sync failed (${String(server.error).slice(0, 200)}).`,
+      "warn",
+    );
+  } else {
+    setHint(
+      els.welcomeHint,
+      "Score saved. You’re back on the welcome page — choose a team to continue.",
+      "good",
+    );
+  }
+  renderWelcome();
   window.scrollTo({ top: 0, behavior: "smooth" });
+  void judge;
 }
 
 function resetDraft() {
@@ -711,50 +627,9 @@ function resetDraft() {
   state.draft.award = "none";
 }
 
-function exportCsv() {
-  const submissions = loadSubmissions();
-  if (submissions.length === 0) {
-    setHint(els.recordsHint, "No submissions to export yet.", "warn");
-    return;
-  }
-
-  const criteriaCols = APP_CONFIG.criteria.map(
-    (c) => `${c.shortName || c.name} (0–10 score)`,
-  );
-
-  const header = [
-    "submittedAt",
-    "judge",
-    "team",
-    "total",
-    "grade",
-    "award",
-    "standoutMoment",
-    ...criteriaCols,
-  ];
-
-  const lines = [header.map(escapeCsv).join(",")];
-  for (const s of submissions) {
-    const row = [
-      s.submittedAt,
-      s.judge,
-      s.team,
-      Number(s.total ?? 0).toFixed(1),
-      s.grade ?? gradeFromTotal(s.total ?? 0),
-      humanizeAward(s.award),
-      s.standoutMoment ?? s.overallFeedback ?? "",
-    ];
-
-    for (const c of APP_CONFIG.criteria) {
-      row.push(String(s.scores?.[c.id] ?? ""));
-    }
-
-    lines.push(row.map(escapeCsv).join(","));
-  }
-
-  const filename = `submissions_${new Date().toISOString().slice(0, 10)}.csv`;
-  downloadTextFile(filename, lines.join("\n"));
-  setHint(els.recordsHint, `Exported ${submissions.length} submission(s) to CSV.`, "good");
+function humanizeAward(id) {
+  const opt = APP_CONFIG.awardOptions.find((o) => o.id === id);
+  return opt ? opt.title : "—";
 }
 
 // ---------- Wire up events ----------
@@ -784,48 +659,39 @@ function initNav() {
         renderScoreContext();
         renderTotal();
         setView("score");
-        return;
-      }
-
-      if (view === "records") {
-        setTopbarJudge(false);
-        renderRecords();
-        setView("records");
-        return;
       }
     });
   });
 }
 
 function initWelcome() {
-  els.startBtn.addEventListener("click", () => {
-    const judge = els.judgeSelect.value;
-    const team = els.teamSelect.value;
-    if (!judge) {
-      setHint(els.welcomeHint, "Please choose a judge.", "warn");
-      return;
-    }
-    if (!team) {
-      setHint(els.welcomeHint, "Please choose a team.", "warn");
-      return;
-    }
-    if (hasSubmissionFor(judge, team)) {
-      setHint(
-        els.welcomeHint,
-        `You already submitted a score for ${judge} × ${team}. Choose another team.`,
-        "warn",
-      );
-      return;
-    }
-    resetDraft();
-    startScoring(judge, team);
-  });
-
-  els.judgeSelect.addEventListener("change", () => {
-    setHint(els.welcomeHint, "");
-    renderWelcomeJudgedList();
-  });
-  els.teamSelect.addEventListener("change", () => setHint(els.welcomeHint, ""));
+  if (els.startBtn) {
+    els.startBtn.addEventListener("click", () => {
+      const judge = getJudgeName();
+      const team = els.teamSelect && els.teamSelect.value;
+      if (!judge) {
+        setHint(els.welcomeHint, "This page is not configured with a judge name. Ask the organiser for a valid link.", "bad");
+        return;
+      }
+      if (!team) {
+        setHint(els.welcomeHint, "Please choose a team.", "warn");
+        return;
+      }
+      if (hasSubmissionFor(judge, team)) {
+        setHint(
+          els.welcomeHint,
+          `You already submitted a score for ${judge} × ${team}. Choose another team.`,
+          "warn",
+        );
+        return;
+      }
+      resetDraft();
+      startScoring(judge, team);
+    });
+  }
+  if (els.teamSelect) {
+    els.teamSelect.addEventListener("change", () => setHint(els.welcomeHint, ""));
+  }
 }
 
 function initScoring() {
@@ -835,113 +701,94 @@ function initScoring() {
     });
   }
 
-  els.resetBtn.addEventListener("click", () => {
-    resetDraft();
-    renderCriteria();
-    renderAwardOptions();
-    if (els.standoutField) els.standoutField.value = "";
-    renderTotal();
-    renderSuccessState(false);
-    setHint(els.scoreHint, "Form reset.", "good");
-  });
+  if (els.resetBtn) {
+    els.resetBtn.addEventListener("click", () => {
+      resetDraft();
+      renderCriteria();
+      renderAwardOptions();
+      if (els.standoutField) els.standoutField.value = "";
+      renderTotal();
+      setHint(els.scoreHint, "Form reset.", "good");
+    });
+  }
 
-  els.backToWelcomeBtn.addEventListener("click", () => {
-    if (
-      confirm(
-        "Return to the welcome screen? Unsaved work on this team will be lost. Submitted teams stay saved.",
-      )
-    ) {
-      goWelcome();
-    }
-  });
+  if (els.backToWelcomeBtn) {
+    els.backToWelcomeBtn.addEventListener("click", () => {
+      if (
+        confirm(
+          "Return to the welcome screen? Unsaved work on this team will be lost. Submitted teams stay saved.",
+        )
+      ) {
+        goWelcome();
+      }
+    });
+  }
 
-  els.goRecordsBtn.addEventListener("click", () => {
-    setTopbarJudge(false);
-    renderRecords();
-    setView("records");
-  });
+  if (els.scoreForm) {
+    els.scoreForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
 
-  els.scoreForm.addEventListener("submit", (e) => {
-    e.preventDefault();
+      const { judge, team } = state.selection;
+      if (!judge || !team) {
+        setHint(els.scoreHint, "Missing judge/team. Go back to the welcome page.", "warn");
+        return;
+      }
 
-    const { judge, team } = state.selection;
-    if (!judge || !team) {
-      setHint(els.scoreHint, "Missing judge/team. Go back to the welcome page.", "warn");
-      return;
-    }
+      if (hasSubmissionFor(judge, team)) {
+        renderScoreContext();
+        return;
+      }
 
-    if (hasSubmissionFor(judge, team)) {
-      renderScoreContext();
-      return;
-    }
+      const sm = String(els.standoutField?.value || state.draft.standoutMoment || "").trim();
+      if (!sm) {
+        setHint(els.scoreHint, "Standout moment is required.", "bad");
+        if (els.standoutField) els.standoutField.focus();
+        return;
+      }
+      state.draft.standoutMoment = sm;
 
-    const sm = String(els.standoutField?.value || state.draft.standoutMoment || "").trim();
-    if (!sm) {
-      setHint(els.scoreHint, "Standout moment is required.", "bad");
-      els.standoutField?.focus();
-      return;
-    }
-    state.draft.standoutMoment = sm;
+      const total = computeWeightedTotal();
+      const submission = {
+        id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        submittedAt: nowIso(),
+        judge,
+        team,
+        judgeTeamKey: makeJudgeTeamKey(judge, team),
+        criteria: APP_CONFIG.criteria.map((c) => ({ id: c.id, name: c.name, weight: c.weight })),
+        scores: { ...state.draft.scores },
+        total,
+        grade: gradeFromTotal(total),
+        standoutMoment: sm,
+        award: state.draft.award || "none",
+      };
 
-    const total = computeWeightedTotal();
-    const submission = {
-      id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()),
-      submittedAt: nowIso(),
-      judge,
-      team,
-      judgeTeamKey: makeJudgeTeamKey(judge, team),
-      criteria: APP_CONFIG.criteria.map((c) => ({ id: c.id, name: c.name, weight: c.weight })),
-      scores: { ...state.draft.scores },
-      total,
-      grade: gradeFromTotal(total),
-      standoutMoment: sm,
-      award: state.draft.award || "none",
-    };
-
-    addSubmission(submission);
-    returnToWelcomeAfterScoring(judge);
-  });
-
-  els.successToRecordsBtn.addEventListener("click", () => {
-    setTopbarJudge(false);
-    renderRecords();
-    setView("records");
-  });
-
-  els.scoreAnotherBtn.addEventListener("click", () => {
-    renderSuccessState(false);
-    goWelcome();
-  });
-
-}
-
-function initRecords() {
-  els.exportCsvBtn.addEventListener("click", exportCsv);
-
-  els.clearAllBtn.addEventListener("click", () => {
-    const ok = confirm("Clear ALL local submissions? This cannot be undone.");
-    if (!ok) return;
-    clearAllSubmissions();
-    renderRecords();
-    goWelcome();
-    setHint(els.recordsHint, "Cleared all local submissions.", "good");
-  });
+      addSubmission(submission);
+      if (els.submitBtn) els.submitBtn.disabled = true;
+      setHint(els.scoreHint, "Submitting…", "muted");
+      const server = await postSubmissionToServer(submission);
+      if (els.submitBtn) els.submitBtn.disabled = false;
+      returnToWelcomeAfterScoring(judge, server);
+    });
+  }
 }
 
 // ---------- Init ----------
 
 function init() {
+  if (!isJudgePage()) {
+    if (els.welcomeHint) {
+      els.welcomeHint.textContent =
+        "This judge app must be opened from a named page (e.g. test-name.html) with a judge set in the page. Use the link you were given.";
+    }
+    return;
+  }
   renderEventText();
   renderWelcome();
   initNav();
   initWelcome();
   initScoring();
-  initRecords();
-
-  // default view
   setTabEnabled("score", false);
   setView("welcome");
 }
 
 document.addEventListener("DOMContentLoaded", init);
-
