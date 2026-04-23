@@ -10,6 +10,7 @@ const {
   putArrayWithRetry,
   writeEmptyJudgeCsv,
 } = require("./lib/github-judge");
+const { deleteByJudgeName } = require("./lib/dbInsert");
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -63,56 +64,93 @@ module.exports = async (req, res) => {
   const repo = process.env.GITHUB_REPO;
   const branch = process.env.GITHUB_BRANCH || "main";
 
-  if (!token || !owner || !repo) {
-    return sendJson(res, 200, {
-      ok: true,
-      git: false,
-      message: "Server not configured for GitHub. Cleared data in this browser only.",
-    });
-  }
-
   const body = parseBody(req);
   const judge = body && String(body.judge || "").trim();
   if (!judge) {
     return sendJson(res, 400, { ok: false, error: "Missing judge" });
   }
 
+  const haveGit = Boolean(token && owner && repo);
+  const haveDb = Boolean(process.env.DATABASE_URL);
+
+  if (!haveGit && !haveDb) {
+    return sendJson(res, 200, {
+      ok: true,
+      git: false,
+      db: { ok: false, skip: true },
+      message: "No server storage. Configure GitHub and/or DATABASE_URL in Vercel to clear the repo/database.",
+    });
+  }
+
   const filePath = getSubmitFilePath(judge);
   const csvPath = getCsvFilePath(judge);
   const ctx = { owner, repo, branch, token };
 
-  try {
-    await putArrayWithRetry(
-      { ...ctx, filePath },
-      [],
-      `chore: reset judge file ${judge} [skip deploy]`,
-    );
-    let csvOk = true;
-    let csvError;
+  let gitCsvOk = true;
+  let gitCsvError;
+
+  if (haveGit) {
     try {
-      await writeEmptyJudgeCsv(ctx, judge);
-    } catch (e2) {
-      csvOk = false;
-      csvError = e2 && e2.message ? e2.message : String(e2);
+      await putArrayWithRetry(
+        { ...ctx, filePath },
+        [],
+        `chore: reset judge file ${judge} [skip deploy]`,
+      );
+      try {
+        await writeEmptyJudgeCsv(ctx, judge);
+      } catch (e2) {
+        gitCsvOk = false;
+        gitCsvError = e2 && e2.message ? e2.message : String(e2);
+        // eslint-disable-next-line no-console
+        console.error("CSV reset in Git failed:", e2);
+      }
+    } catch (e) {
       // eslint-disable-next-line no-console
-      console.error("CSV reset in Git failed:", e2);
+      console.error(e);
+      return sendJson(res, 500, {
+        ok: false,
+        git: false,
+        error: e && e.message ? e.message : String(e),
+      });
     }
+  }
+
+  let db = { ok: true, skip: !process.env.DATABASE_URL };
+  if (process.env.DATABASE_URL) {
+    try {
+      const r = await deleteByJudgeName(judge);
+      if (r.skip) db = { ok: true, skip: true };
+      else if (r.ok) db = { ok: true, skip: false };
+      else db = { ok: false, error: r.error };
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("DB delete failed:", e);
+      db = {
+        ok: false,
+        error: e && e.message ? e.message : String(e),
+        skip: false,
+      };
+    }
+  }
+
+  if (haveGit) {
     return sendJson(res, 200, {
       ok: true,
       git: true,
-      message: "Cleared in repository (JSON + CSV).",
+      db: process.env.DATABASE_URL ? db : undefined,
+      message: "Cleared in repository and/or database.",
       path: filePath,
       csvPath,
-      csvOk,
-      csvError: csvError || undefined,
-    });
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.error(e);
-    return sendJson(res, 500, {
-      ok: false,
-      git: false,
-      error: e && e.message ? e.message : String(e),
+      csvOk: gitCsvOk,
+      csvError: gitCsvError || undefined,
     });
   }
+
+  return sendJson(res, 200, {
+    ok: true,
+    git: false,
+    db: process.env.DATABASE_URL ? db : { ok: false, skip: true },
+    message: "Database cleared (Git not configured).",
+  });
 };
+

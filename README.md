@@ -44,6 +44,21 @@ On each judge page’s **Welcome** screen, a **Submission records** table lists 
 3. Add the [environment variables](#environment-variables) for GitHub.
 4. Deploy. Static pages and the API routes are available (e.g. `https://your-project.vercel.app/example-smith.html`).
 
+## Optional: database (PostgreSQL on Neon) + Excel
+
+Git already stores **`.csv` per judge** in the repo. If you also want a **queryable database** (reporting, filters, a single “export everything” file):
+
+1. Create a free **[Neon](https://neon.tech)** project. Copy the **connection string** (use the **pooled** / “serverless” string for Vercel).
+2. In the Neon **SQL Editor**, run the script in **`sql/001_submissions.sql`** to create the `submissions` table.
+3. In **Vercel → Environment variables**, set **`DATABASE_URL`** to that connection string (Production + Preview as needed) and **redeploy**.
+4. Each **Submit** will **upsert** a row in `submissions` (same data as the app), with or without Git.
+5. **Full CSV for Excel (all judges):** set **`EXPORT_CSV_SECRET`** in Vercel to a long random string, redeploy, then call:
+   - `GET /api/export-db-csv` with header `Authorization: Bearer <EXPORT_CSV_SECRET>`, or  
+   - The same URL with `?secret=<EXPORT_CSV_SECRET>` (less safe; keep the secret private).  
+   The response is a **UTF-8 CSV** you can open in Excel. You can also run ad-hoc SQL in the Neon console and use Neon’s export tools.
+
+**Reset all my marks** also **deletes** that judge’s rows in the database when `DATABASE_URL` is set.
+
 ## Environment variables
 
 | Name | Required | Description |
@@ -53,6 +68,8 @@ On each judge page’s **Welcome** screen, a **Submission records** table lists 
 | `GITHUB_REPO` | For repo writes | Repository name (without `.git`) |
 | `GITHUB_BRANCH` | No | Branch to update, default `main` |
 | `JUDGE_DATA_DIR` | No | Directory in repo for judge JSON files, default `data/judges` (no leading slash) |
+| `DATABASE_URL` | No | **Neon** (or any Postgres) connection string; enables table `submissions` + optional export |
+| `EXPORT_CSV_SECRET` | No | If set, protects **`/api/export-db-csv`** (Bearer or `?secret=`) |
 | `INGEST_SECRET` | No | If set, `POST` to `/api/submit` and `/api/reset-judge` must send header `x-ingest-key: <value>`; optional `ingestKey` in `__JUDGE_PAGE` on the static page (visible in the client) |
 
 **Build noise:** API commits include `[skip deploy]` in the message. Configure **Ignored Build Step** in Vercel if you want to skip redeploys on those commits (see current Vercel docs).

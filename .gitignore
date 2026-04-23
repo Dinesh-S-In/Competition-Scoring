@@ -3,6 +3,9 @@
 Thumbs.db
 desktop.ini
 
+# Dependencies
+node_modules/
+
 # Vercel (local link, not the project config)
 .vercel/
 .env

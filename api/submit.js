@@ -1,6 +1,6 @@
 /**
- * Appends or updates one submission in data/judges/<slug>.json (slug from judge name).
- * Vercel env: GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO, optional GITHUB_BRANCH, JUDGE_DATA_DIR (default data/judges), INGEST_SECRET.
+ * Appends/updates: Git (data/judges/*.json + *.csv) and/or PostgreSQL (Neon).
+ * Env: GITHUB_*, JUDGE_DATA_DIR, INGEST_SECRET, DATABASE_URL (Neon)
  */
 
 const {
@@ -9,6 +9,8 @@ const {
   appendWithRetry,
   writeJudgeCsvMirror,
 } = require("./lib/github-judge");
+
+const { upsertSubmission: upsertSubmissionDb } = require("./lib/dbInsert");
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -57,61 +59,105 @@ module.exports = async (req, res) => {
     }
   }
 
+  const body = parseBody(req);
+  if (!body || !body.judge || !body.team) {
+    return sendJson(res, 400, { ok: false, error: "Missing judge or team" });
+  }
+
   const token = process.env.GITHUB_TOKEN;
   const owner = process.env.GITHUB_OWNER;
   const repo = process.env.GITHUB_REPO;
   const branch = process.env.GITHUB_BRANCH || "main";
+  const haveGit = Boolean(token && owner && repo);
+  const haveDb = Boolean(process.env.DATABASE_URL);
 
-  if (!token || !owner || !repo) {
+  if (!haveGit && !haveDb) {
     return sendJson(res, 200, {
       ok: true,
       git: false,
-      message: "Server not configured for GitHub. Submission is stored in the browser only.",
+      db: { ok: false, skip: true },
+      message:
+        "No server storage configured. Add GITHUB_TOKEN + GITHUB_OWNER + GITHUB_REPO and/or DATABASE_URL (see README). Data stays in the browser only.",
     });
-  }
-
-  const body = parseBody(req);
-
-  if (!body || !body.judge || !body.team) {
-    return sendJson(res, 400, { ok: false, error: "Missing judge or team" });
   }
 
   const filePath = getSubmitFilePath(body.judge);
   const csvPath = getCsvFilePath(body.judge);
   const ctx = { owner, repo, branch, token };
 
-  try {
-    const result = await appendWithRetry(
-      { ...ctx, filePath },
-      body,
-    );
-    let csvOk = true;
-    let csvError;
+  let git = { ok: false, paths: { json: filePath, csv: csvPath } };
+  if (haveGit) {
     try {
-      await writeJudgeCsvMirror(ctx, body.judge, result.merged);
-    } catch (e2) {
-      csvOk = false;
-      csvError = e2 && e2.message ? e2.message : String(e2);
+      const result = await appendWithRetry({ ...ctx, filePath }, body);
+      git = {
+        ...git,
+        ok: true,
+        inRepo: result,
+        path: filePath,
+        csvPath,
+      };
+      let csvOk = true;
+      let csvError;
+      try {
+        await writeJudgeCsvMirror(ctx, body.judge, result.merged);
+      } catch (e2) {
+        csvOk = false;
+        csvError = e2 && e2.message ? e2.message : String(e2);
+        // eslint-disable-next-line no-console
+        console.error("CSV mirror to Git failed:", e2);
+      }
+      Object.assign(git, { csvOk, csvError: csvError || undefined });
+    } catch (e) {
       // eslint-disable-next-line no-console
-      console.error("CSV mirror to Git failed:", e2);
+      console.error("Git update failed:", e);
+      Object.assign(git, {
+        error: e && e.message ? e.message : String(e),
+      });
     }
-    return sendJson(res, 200, {
-      ok: true,
-      git: true,
-      message: "Saved to repository (JSON + CSV for Excel).",
-      inRepo: result,
-      path: filePath,
-      csvPath,
-      csvOk,
-      csvError: csvError || undefined,
-    });
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.error(e);
-    return sendJson(res, 500, {
-      ok: false,
-      git: false,
-      error: e && e.message ? e.message : String(e),
-    });
+  } else {
+    Object.assign(git, { skipped: "GitHub not configured" });
   }
+
+  let db = { ok: true, skip: !process.env.DATABASE_URL };
+  if (process.env.DATABASE_URL) {
+    try {
+      const r = await upsertSubmissionDb(body);
+      if (r.skip) {
+        db = { ok: true, skip: true };
+      } else if (r.ok) {
+        db = { ok: true, skip: false };
+      } else {
+        db = { ok: false, error: r.error, skip: false };
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("DB upsert failed:", e);
+      db = {
+        ok: false,
+        skip: false,
+        error: e && e.message ? e.message : String(e),
+      };
+    }
+  } else {
+    Object.assign(db, { skipped: "DATABASE_URL not set" });
+  }
+
+  return sendJson(res, 200, {
+    ok: true,
+    git: Boolean(git.ok),
+    gitError: git.error,
+    inRepo: git.inRepo,
+    path: filePath,
+    csvPath: haveGit ? csvPath : undefined,
+    csvOk: git.csvOk,
+    csvError: git.csvError,
+    db: process.env.DATABASE_URL
+      ? {
+          ok: Boolean(db.ok),
+          error: db.error,
+          skip: Boolean(db.skip),
+        }
+      : { ok: false, skip: true },
+    message: "Processed.",
+  });
 };

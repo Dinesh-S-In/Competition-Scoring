@@ -773,24 +773,36 @@ function returnToWelcomeAfterScoring(judge, server) {
   setTabEnabled("score", false);
   setView("welcome");
   setHint(els.scoreHint, "");
-  if (server && server.ok && server.git) {
-    const baseMsg =
-      "Score saved and synced to the organiser’s repository (data/judges/… .json + .csv for Excel). Choose a team to continue when ready.";
-    if (server.csvOk === false) {
+  if (server && server.ok) {
+    const d = server.db;
+    const dbSaved = d && !d.skip && d.ok;
+    const parts = [];
+    if (server.git) parts.push("the organiser’s Git repository (data/judges/… .json + .csv)");
+    if (dbSaved) parts.push("the database (export CSV from the organiser, see README)");
+    if (parts.length) {
+      let baseMsg = `Score saved to ${parts.join(" and ")}. Choose a team to continue when ready.`;
+      if (server.git && server.csvOk === false) {
+        setHint(
+          els.welcomeHint,
+          `${baseMsg} Note: the CSV file in Git could not be updated (${String(server.csvError || "error").slice(0, 200)}). The JSON file was saved; check Vercel function logs.`,
+          "warn",
+        );
+      } else {
+        setHint(els.welcomeHint, baseMsg, "good");
+      }
+    } else if (d && !d.skip && !d.ok) {
       setHint(
         els.welcomeHint,
-        `${baseMsg} Note: the CSV file in Git could not be updated (${String(server.csvError || "error").slice(0, 200)}). The JSON file was saved; check Vercel function logs.`,
+        `Score saved on this device. The database could not be updated: ${String(d.error || "error").slice(0, 200)}`,
         "warn",
       );
     } else {
-      setHint(els.welcomeHint, baseMsg, "good");
+      setHint(
+        els.welcomeHint,
+        "Score saved on this device. No server storage (Git and/or database) is configured; ask the organiser to set environment variables in Vercel.",
+        "warn",
+      );
     }
-  } else if (server && server.ok && !server.git) {
-    setHint(
-      els.welcomeHint,
-      "Score saved on this device. Cloud backup is not enabled on the server; ask the organiser to set GitHub in Vercel, or your score still exists only in the browser for now.",
-      "warn",
-    );
   } else if (server && server.error) {
     setHint(
       els.welcomeHint,
