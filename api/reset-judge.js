@@ -4,7 +4,12 @@
  * Same env as submit: GITHUB_*, JUDGE_DATA_DIR, INGEST_SECRET.
  */
 
-const { getSubmitFilePath, putArrayWithRetry } = require("./lib/github-judge");
+const {
+  getSubmitFilePath,
+  getCsvFilePath,
+  putArrayWithRetry,
+  writeEmptyJudgeCsv,
+} = require("./lib/github-judge");
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -73,18 +78,33 @@ module.exports = async (req, res) => {
   }
 
   const filePath = getSubmitFilePath(judge);
+  const csvPath = getCsvFilePath(judge);
+  const ctx = { owner, repo, branch, token };
 
   try {
     await putArrayWithRetry(
-      { owner, repo, branch, token, filePath },
+      { ...ctx, filePath },
       [],
       `chore: reset judge file ${judge} [skip deploy]`,
     );
+    let csvOk = true;
+    let csvError;
+    try {
+      await writeEmptyJudgeCsv(ctx, judge);
+    } catch (e2) {
+      csvOk = false;
+      csvError = e2 && e2.message ? e2.message : String(e2);
+      // eslint-disable-next-line no-console
+      console.error("CSV reset in Git failed:", e2);
+    }
     return sendJson(res, 200, {
       ok: true,
       git: true,
-      message: "Cleared in repository.",
+      message: "Cleared in repository (JSON + CSV).",
       path: filePath,
+      csvPath,
+      csvOk,
+      csvError: csvError || undefined,
     });
   } catch (e) {
     // eslint-disable-next-line no-console

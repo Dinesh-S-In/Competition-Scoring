@@ -455,7 +455,10 @@ function renderWelcomeRecordsTable() {
     const path = judgeDataFilePathForDisplay(mine);
     els.welcomeRecordsMeta.textContent = `${rows.length} submission${
       rows.length === 1 ? "" : "s"
-    } on this page (this browser). Submits sync to the repo as ${path} when Vercel and GitHub are set up. “Reset all my marks” clears this browser and that file. Use “Download CSV for Excel” for a spreadsheet.`;
+    } on this page (this browser). When the server is configured, each submit also updates the same path with a .json extension and a matching .csv you can open in Excel from Git (e.g. ${path.replace(
+      /\.json$/,
+      ".csv",
+    )}). “Reset all my marks” clears both in the repo. You can also use “Download CSV for Excel” for a local copy.`;
   }
 
   els.welcomeRecordsTbody.innerHTML = "";
@@ -771,11 +774,17 @@ function returnToWelcomeAfterScoring(judge, server) {
   setView("welcome");
   setHint(els.scoreHint, "");
   if (server && server.ok && server.git) {
-    setHint(
-      els.welcomeHint,
-      "Score saved and synced to the organiser’s repository. Choose a team to continue when ready.",
-      "good",
-    );
+    const baseMsg =
+      "Score saved and synced to the organiser’s repository (data/judges/… .json + .csv for Excel). Choose a team to continue when ready.";
+    if (server.csvOk === false) {
+      setHint(
+        els.welcomeHint,
+        `${baseMsg} Note: the CSV file in Git could not be updated (${String(server.csvError || "error").slice(0, 200)}). The JSON file was saved; check Vercel function logs.`,
+        "warn",
+      );
+    } else {
+      setHint(els.welcomeHint, baseMsg, "good");
+    }
   } else if (server && server.ok && !server.git) {
     setHint(
       els.welcomeHint,
@@ -891,7 +900,7 @@ function initWelcome() {
         return;
       }
       const ok = confirm(
-        "Reset ALL marks for you on this page? This cannot be undone. It clears this browser and, if the site is connected to GitHub, replaces your file in the repository with an empty list.",
+        "Reset ALL marks for you on this page? This cannot be undone. It clears this browser and, if the site is connected to GitHub, clears your JSON and CSV files under data/judges/ in the repository.",
       );
       if (!ok) return;
       clearAllSubmissions();
@@ -900,11 +909,21 @@ function initWelcome() {
       setHint(els.welcomeHint, "Clearing…", "muted");
       const server = await postResetJudgeToServer(judge);
       if (server && server.ok && server.git) {
-        setHint(
-          els.welcomeHint,
-          `All marks cleared. Local data and ${judgeDataFilePathForDisplay(judge)} in the repository are now empty.`,
-          "good",
-        );
+        const jsonPath = judgeDataFilePathForDisplay(judge);
+        const csvPath = jsonPath.replace(/\.json$/i, ".csv");
+        if (server.csvOk === false) {
+          setHint(
+            els.welcomeHint,
+            `Cleared locally and JSON was cleared in Git (${jsonPath}). CSV reset failed: ${String(server.csvError || "").slice(0, 200)}. Check Vercel logs.`,
+            "warn",
+          );
+        } else {
+          setHint(
+            els.welcomeHint,
+            `All marks cleared. Local data and ${jsonPath} + ${csvPath} in the repository are now empty.`,
+            "good",
+          );
+        }
       } else if (server && server.ok && !server.git) {
         setHint(
           els.welcomeHint,

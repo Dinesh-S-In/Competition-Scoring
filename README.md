@@ -6,8 +6,19 @@ On each judge page’s **Welcome** screen, a **Submission records** table lists 
 
 ### Data in Git (per judge, Excel-friendly)
 
-- With Vercel, each **Submit** is merged into **one file per judge** under **`data/judges/`** — file name = **slug of the display name** (e.g. `Example SMITH` → `data/judges/example-smith.json`). The array holds that judge’s submissions; pull the repo to open in Excel, compare judges, or archive.
-- The previous single file `data/submissions.json` is no longer written; if you have old data there, copy it out before discarding the file.
+- With Vercel, each **Submit** updates **two files** per judge under **`data/judges/`** (same **slug** from the display name, e.g. `Example SMITH` → `example-smith`):
+  - **`data/judges/<slug>.json`** — full submission objects (for apps/scripts).
+  - **`data/judges/<slug>.csv`** — same columns as “Download CSV for Excel”, UTF-8 with BOM; **open this file in Microsoft Excel** directly from the repo after `git pull`, or from GitHub’s file view → Download.
+- **Reset all my marks** clears both the `.json` and `.csv` for that judge in Git.
+- The old single file `data/submissions.json` is not used; migrate any old data from history if needed.
+
+#### If nothing appears in Git on push
+
+1. In **Vercel → Project → Settings → Environment Variables**, confirm **`GITHUB_TOKEN`**, **`GITHUB_OWNER`**, and **`GITHUB_REPO`** are set for **Production** (redeploy after adding).
+2. The token must allow **Contents: write** on that repository (classic `repo` scope, or fine-grained “Contents” read/write on the repo).
+3. If you set **`INGEST_SECRET`**, the judge page must include `ingestKey` in `__JUDGE_PAGE` to match, or all API calls are rejected.
+4. After a submit, open the browser **Network** tab: `POST /api/submit` should return **`200`** with `"git": true`. If `"git": false`, the server is not configured. If `"csvOk": false`, JSON still saved but CSV step failed—check **Vercel → Deployments → Functions** logs.
+5. Confirm the **GitHub default branch** matches **`GITHUB_BRANCH`** (default `main`). The API commits to that branch; your local clone must pull that branch to see files.
 - **Scoring + Git:** [Vercel](#deploy-on-vercel) (run `npx vercel` or connect the repo) so the `/api/submit` and `/api/reset-judge` serverless routes run.
 - **Static only:** [GitHub Pages](#github-pages) can host the files, but **no Git writes** from the app. Use Vercel for repo updates.
 

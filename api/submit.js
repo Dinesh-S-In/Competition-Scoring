@@ -3,7 +3,12 @@
  * Vercel env: GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO, optional GITHUB_BRANCH, JUDGE_DATA_DIR (default data/judges), INGEST_SECRET.
  */
 
-const { getSubmitFilePath, appendWithRetry } = require("./lib/github-judge");
+const {
+  getSubmitFilePath,
+  getCsvFilePath,
+  appendWithRetry,
+  writeJudgeCsvMirror,
+} = require("./lib/github-judge");
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -72,18 +77,33 @@ module.exports = async (req, res) => {
   }
 
   const filePath = getSubmitFilePath(body.judge);
+  const csvPath = getCsvFilePath(body.judge);
+  const ctx = { owner, repo, branch, token };
 
   try {
     const result = await appendWithRetry(
-      { owner, repo, branch, token, filePath },
+      { ...ctx, filePath },
       body,
     );
+    let csvOk = true;
+    let csvError;
+    try {
+      await writeJudgeCsvMirror(ctx, body.judge, result.merged);
+    } catch (e2) {
+      csvOk = false;
+      csvError = e2 && e2.message ? e2.message : String(e2);
+      // eslint-disable-next-line no-console
+      console.error("CSV mirror to Git failed:", e2);
+    }
     return sendJson(res, 200, {
       ok: true,
       git: true,
-      message: "Saved to repository.",
+      message: "Saved to repository (JSON + CSV for Excel).",
       inRepo: result,
       path: filePath,
+      csvPath,
+      csvOk,
+      csvError: csvError || undefined,
     });
   } catch (e) {
     // eslint-disable-next-line no-console
