@@ -1,7 +1,7 @@
 /* 
   Competition Judging App (vanilla JS)
   - localStorage (per-judge when using a named judge page)
-  - optional POST to /api/submit to merge into data/submissions.json on GitHub
+  - optional POST to /api/submit → per-judge file data/judges/<slug>.json on GitHub; POST /api/reset-judge clears that file
 */
 
 const APP_CONFIG = {
@@ -261,6 +261,27 @@ async function postSubmissionToServer(submission) {
   }
 }
 
+async function postResetJudgeToServer(judge) {
+  const headers = { "Content-Type": "application/json" };
+  if (window.__JUDGE_PAGE && window.__JUDGE_PAGE.ingestKey) {
+    headers["x-ingest-key"] = String(window.__JUDGE_PAGE.ingestKey);
+  }
+  try {
+    const r = await fetch("/api/reset-judge", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ judge }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      return { ok: false, git: Boolean(j.git), error: j.error || `HTTP ${r.status}` };
+    }
+    return { ok: true, ...j };
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : String(e) };
+  }
+}
+
 // ---------- App state ----------
 
 const state = {
@@ -311,6 +332,7 @@ const els = {
   welcomeRecordsTbody: $("#welcomeRecordsTbody"),
   exportMyCsvBtn: $("#exportMyCsvBtn"),
   welcomeExportHint: $("#welcomeExportHint"),
+  resetMyMarksBtn: $("#resetMyMarksBtn"),
 };
 
 // ---------- Judge name resolution ----------
@@ -318,6 +340,20 @@ const els = {
 function getJudgeName() {
   if (isJudgePage()) return getJudgeNameFromConfig();
   return "";
+}
+
+/** Matches server-side slug: data/judges/<slug>.json in the repo. */
+function judgeDataFilePathForDisplay(judgeName) {
+  const slug = String(judgeName || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "judge";
+  return `data/judges/${slug}.json`;
+}
+
+function clearAllSubmissions() {
+  saveSubmissions([]);
 }
 
 // ---------- Rendering ----------
@@ -416,9 +452,10 @@ function renderWelcomeRecordsTable() {
   rows.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
 
   if (els.welcomeRecordsMeta) {
+    const path = judgeDataFilePathForDisplay(mine);
     els.welcomeRecordsMeta.textContent = `${rows.length} submission${
       rows.length === 1 ? "" : "s"
-    } for this page (this browser). The same rows are also merged into the organiser’s Git file data/submissions.json when Vercel and GitHub are configured. Use “Download CSV for Excel” to open the same columns in Excel.`;
+    } on this page (this browser). Submits sync to the repo as ${path} when Vercel and GitHub are set up. “Reset all my marks” clears this browser and that file. Use “Download CSV for Excel” for a spreadsheet.`;
   }
 
   els.welcomeRecordsTbody.innerHTML = "";
@@ -499,7 +536,9 @@ function exportMySubmissionsToCsv() {
   downloadTextFile(filename, content);
   setHint(
     els.welcomeExportHint,
-    `Downloaded ${rows.length} row(s) as ${filename} — open in Microsoft Excel. Data is the same as in the table and in the repo’s data/submissions.json after a successful server sync.`,
+    `Downloaded ${rows.length} row(s) as ${filename} — open in Microsoft Excel. Data matches the table and ${judgeDataFilePathForDisplay(
+      mine,
+    )} in the repo after a successful server sync.`,
     "good",
   );
 }
@@ -840,6 +879,45 @@ function initWelcome() {
         return;
       }
       exportMySubmissionsToCsv();
+    });
+  }
+  if (els.resetMyMarksBtn) {
+    els.resetMyMarksBtn.addEventListener("click", async () => {
+      const judge = getJudgeName();
+      if (!judge) return;
+      const n = loadSubmissions().filter((s) => s && s.judge === judge).length;
+      if (n === 0) {
+        setHint(els.welcomeHint, "There are no marks to reset yet.", "warn");
+        return;
+      }
+      const ok = confirm(
+        "Reset ALL marks for you on this page? This cannot be undone. It clears this browser and, if the site is connected to GitHub, replaces your file in the repository with an empty list.",
+      );
+      if (!ok) return;
+      clearAllSubmissions();
+      setHint(els.welcomeExportHint, "");
+      renderWelcomeRecordsTable();
+      setHint(els.welcomeHint, "Clearing…", "muted");
+      const server = await postResetJudgeToServer(judge);
+      if (server && server.ok && server.git) {
+        setHint(
+          els.welcomeHint,
+          `All marks cleared. Local data and ${judgeDataFilePathForDisplay(judge)} in the repository are now empty.`,
+          "good",
+        );
+      } else if (server && server.ok && !server.git) {
+        setHint(
+          els.welcomeHint,
+          "Cleared in this browser. The server is not configured to update Git; ask the organiser to set Vercel env or accept local-only clear.",
+          "warn",
+        );
+      } else {
+        setHint(
+          els.welcomeHint,
+          `Cleared in this browser. Server could not update Git: ${(server && server.error) || "unknown"}.`,
+          "warn",
+        );
+      }
     });
   }
 }

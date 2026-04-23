@@ -468,6 +468,15 @@ select.input {
 .btn--ghost {
   background: transparent;
 }
+.btn--danger {
+  border-color: rgba(220, 38, 38, 0.4);
+  color: var(--bad);
+  background: #fff8f8;
+}
+.btn--danger:hover {
+  background: #fee2e2;
+  border-color: var(--bad);
+}
 .iconBtn {
   width: 36px;
   height: 36px;

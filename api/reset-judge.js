@@ -1,9 +1,10 @@
 /**
- * Appends or updates one submission in data/judges/<slug>.json (slug from judge name).
- * Vercel env: GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO, optional GITHUB_BRANCH, JUDGE_DATA_DIR (default data/judges), INGEST_SECRET.
+ * Clears one judge’s JSON file in the repo (sets it to []).
+ * POST body: { "judge": "Example SMITH" }
+ * Same env as submit: GITHUB_*, JUDGE_DATA_DIR, INGEST_SECRET.
  */
 
-const { getSubmitFilePath, appendWithRetry } = require("./lib/github-judge");
+const { getSubmitFilePath, putArrayWithRetry } = require("./lib/github-judge");
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -61,28 +62,28 @@ module.exports = async (req, res) => {
     return sendJson(res, 200, {
       ok: true,
       git: false,
-      message: "Server not configured for GitHub. Submission is stored in the browser only.",
+      message: "Server not configured for GitHub. Cleared data in this browser only.",
     });
   }
 
   const body = parseBody(req);
-
-  if (!body || !body.judge || !body.team) {
-    return sendJson(res, 400, { ok: false, error: "Missing judge or team" });
+  const judge = body && String(body.judge || "").trim();
+  if (!judge) {
+    return sendJson(res, 400, { ok: false, error: "Missing judge" });
   }
 
-  const filePath = getSubmitFilePath(body.judge);
+  const filePath = getSubmitFilePath(judge);
 
   try {
-    const result = await appendWithRetry(
+    await putArrayWithRetry(
       { owner, repo, branch, token, filePath },
-      body,
+      [],
+      `chore: reset judge file ${judge} [skip deploy]`,
     );
     return sendJson(res, 200, {
       ok: true,
       git: true,
-      message: "Saved to repository.",
-      inRepo: result,
+      message: "Cleared in repository.",
       path: filePath,
     });
   } catch (e) {

@@ -81,6 +81,7 @@
               </div>
               <div class="recordsHeader__actions">
                 <button type="button" class="btn" id="exportMyCsvBtn">Download CSV for Excel</button>
+                <button type="button" class="btn btn--danger" id="resetMyMarksBtn">Reset all my marks</button>
               </div>
             </div>
             <div class="tableWrap" role="region" aria-label="Your submissions" tabindex="0">
@@ -187,9 +188,9 @@
     <footer class="footer">
       <div class="container footer__inner">
         <div class="muted">
-          This page is for one judge. Scores are stored in your browser and also sent to
-          <code>data/submissions.json</code> in the project repository when the Vercel server is
-          configured.
+          This page is for one judge. Scores are stored in your browser and, when configured, in the
+          repo as one JSON file per judge, e.g. <code>data/judges/example-smith.json</code> (slug
+          is derived from the judge name; see the welcome table).
         </div>
       </div>
     </footer>
