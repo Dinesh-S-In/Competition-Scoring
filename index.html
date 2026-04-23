@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Competition Judging</title>
+    <meta
+      name="description"
+      content="A premium, presentation-ready judging and scoring app."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+
+  <body>
+    <div class="bg-page" aria-hidden="true">
+      <div class="bg-grid"></div>
+    </div>
+
+    <header class="topbar">
+      <div class="container topbar__inner">
+        <div class="brand">
+          <div class="brand__mark" aria-hidden="true">
+            <span class="brand__dot"></span>
+          </div>
+          <div class="brand__text">
+            <div class="brand__title" id="eventTitle">Competition Scoring</div>
+            <div class="brand__subtitle" id="eventSubtitle">
+              Fast, consistent judging with weighted criteria.
+            </div>
+          </div>
+        </div>
+
+        <div class="topbar__context" id="topbarContext" hidden>
+          <div class="topbar__judge" id="topbarJudge" aria-live="polite">—</div>
+        </div>
+
+        <nav class="topnav" aria-label="Primary">
+          <button class="tab is-active" data-nav="welcome" type="button">
+            Welcome
+          </button>
+          <button class="tab" data-nav="score" type="button" disabled>
+            Scoring
+          </button>
+          <button class="tab" data-nav="records" type="button">
+            Records
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container">
+      <!-- WELCOME / JUDGE SELECTION -->
+      <section class="view is-active" id="view-welcome" data-view="welcome">
+        <div class="grid grid--2">
+          <div class="card card--hero">
+            <div class="chip">Premium Judging</div>
+            <h1 class="h1">Welcome, judge.</h1>
+            <p class="muted lead" id="eventDescription">
+              Choose your name and the first team to evaluate. After that, teams
+              follow in order until all eight are done — you cannot skip ahead.
+            </p>
+
+            <div class="form form--stack">
+              <label class="field">
+                <span class="field__label">Judge</span>
+                <select id="judgeSelect" class="input" required></select>
+              </label>
+
+              <label class="field" id="startTeamField">
+                <span class="field__label">First team to score</span>
+                <select id="teamSelect" class="input" required></select>
+                <div class="hint" id="startTeamHint" style="margin-top:4px;min-height:2.5em"></div>
+              </label>
+
+              <p class="resumeBanner muted" id="resumeBanner" hidden></p>
+
+              <button id="startBtn" class="btn btn--primary" type="button">
+                Start scoring
+              </button>
+              <div class="hint" id="welcomeHint" role="status" aria-live="polite"></div>
+            </div>
+          </div>
+
+          <div class="card card--info">
+            <h2 class="h2">How scoring works</h2>
+            <ul class="list">
+              <li>
+                <strong>Strict team order</strong> — e.g. start with Team 3, then
+                4→8, then 1→2. You must finish all eight for your name.
+              </li>
+              <li>
+                <strong>5 weighted criteria</strong> (0–10 each) with a live
+                weighted total.
+              </li>
+              <li>
+                <strong>Overall feedback</strong> and one award nomination per
+                team.
+              </li>
+              <li>
+                <strong>Local-first</strong> via localStorage; structured so you
+                can later swap to Supabase.
+              </li>
+            </ul>
+
+            <div class="callout">
+              <div class="callout__title">Tip</div>
+              <div class="callout__body">
+                You can customize the event title/description directly in
+                <code>app.js</code> (look for <code>APP_CONFIG</code>), or replace
+                these HTML blocks with your own later.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- MAIN SCORING -->
+      <section class="view" id="view-score" data-view="score">
+        <div class="card card--scoreHeader">
+          <div class="scoreHeader">
+            <div>
+              <div class="kicker" id="scoreKicker">Scoring</div>
+              <div class="teamPill" id="teamPill" aria-label="Current team">Team —</div>
+              <div class="h2 h2--team" id="scoreContext">Current team</div>
+              <div class="muted" id="scoreContextMeta">
+                Every criterion uses the same 0–10 scale (see below).
+              </div>
+            </div>
+
+            <div class="totalBox" aria-label="Weighted total">
+              <div class="totalBox__label">Weighted total (out of 10)</div>
+              <div class="totalBox__value">
+                <span id="totalValue">0.0</span><span class="totalBox__unit">/ 10</span>
+              </div>
+              <div class="totalBox__grade" id="totalGrade">—</div>
+              <div class="totalBox__hint muted" id="totalHint">
+                Auto-calculated using the weights on each card.
+              </div>
+            </div>
+          </div>
+
+          <div class="scoreHeader__actions">
+            <button class="btn" id="backToWelcomeBtn" type="button">
+              Back to welcome
+            </button>
+            <button class="btn btn--ghost" id="goRecordsBtn" type="button">
+              View records
+            </button>
+          </div>
+        </div>
+
+        <form class="card card--scoreBody" id="scoreForm">
+          <div class="scaleCallout" role="note" aria-label="Scoring scale">
+            <div class="scaleCallout__badge">0–10 scale</div>
+            <div class="scaleCallout__text">
+              <strong>Score each dimension from 0 to 10</strong> — 0 = no
+              evidence / not demonstrated, 10 = exceptional. Your weighted total
+              (out of 10) updates live.
+            </div>
+          </div>
+
+          <div class="sectionRubric">
+            <span class="sectionRubric__line" aria-hidden="true"></span>
+            <span class="sectionRubric__label">Scoring criteria</span>
+            <span class="sectionRubric__line" aria-hidden="true"></span>
+          </div>
+
+          <div id="criteriaContainer" class="criteria"></div>
+
+          <div id="breakdownContainer" class="breakdown" hidden></div>
+
+          <div class="divider"></div>
+
+          <div class="grid grid--2">
+            <label class="field">
+              <span class="field__label">Overall feedback</span>
+              <textarea
+                id="overallFeedback"
+                class="input textarea"
+                rows="5"
+                placeholder="Summarize strengths, risks, and next steps..."
+              ></textarea>
+            </label>
+
+            <div class="field">
+              <div class="field__label field__label--mono">Award nomination (select one)</div>
+              <div class="radioGrid" id="awardOptions" role="radiogroup" aria-label="Award nomination">
+                <!-- populated by JS -->
+              </div>
+              <div class="hint" id="awardHint">Select the single best-fit category for this team.</div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn btn--primary" id="submitBtn" type="submit">
+              Submit &amp; Go to Next Team
+            </button>
+            <button class="btn btn--ghost" id="resetBtn" type="button">
+              Reset form
+            </button>
+          </div>
+
+          <div class="successState" id="successState" hidden>
+            <div class="successState__icon" aria-hidden="true">✓</div>
+            <div>
+              <div class="successState__title">Submission saved.</div>
+              <div class="muted">
+                This judge-team pair is now locked to prevent duplicates.
+              </div>
+            </div>
+            <div class="successState__actions">
+              <button class="btn" id="successToRecordsBtn" type="button">
+                Go to records
+              </button>
+              <button class="btn btn--ghost" id="scoreAnotherBtn" type="button">
+                Score another team
+              </button>
+            </div>
+          </div>
+
+          <div class="hint" id="scoreHint" role="status" aria-live="polite"></div>
+        </form>
+      </section>
+
+      <!-- JUDGE COMPLETED ALL 8 TEAMS -->
+      <section class="view" id="view-complete" data-view="complete">
+        <div class="card card--complete">
+          <div class="complete__icon" aria-hidden="true">✓</div>
+          <h1 class="complete__title" id="completeTitle">All teams scored</h1>
+          <p class="complete__text muted" id="completeText">
+            You have submitted scores for all eight teams in your assigned order.
+          </p>
+          <div class="complete__actions">
+            <button class="btn btn--primary" id="completeToRecordsBtn" type="button">
+              View records
+            </button>
+            <button class="btn" id="completeToWelcomeBtn" type="button">
+              Back to welcome
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SUBMISSION RECORDS -->
+      <section class="view" id="view-records" data-view="records">
+        <div class="card">
+          <div class="recordsHeader">
+            <div>
+              <div class="kicker">Submission records</div>
+              <div class="h2">All submissions</div>
+              <div class="muted" id="recordsMeta"></div>
+            </div>
+            <div class="recordsHeader__actions">
+              <button class="btn" id="exportCsvBtn" type="button">
+                Export CSV
+              </button>
+              <button class="btn btn--ghost" id="clearAllBtn" type="button">
+                Clear all (local)
+              </button>
+            </div>
+          </div>
+
+          <div class="tableWrap" role="region" aria-label="Submissions table" tabindex="0">
+            <table class="table" id="recordsTable">
+              <thead>
+                <tr>
+                  <th>Submitted</th>
+                  <th>Judge</th>
+                  <th>Team</th>
+                  <th class="table__num">Score</th>
+                  <th>Grade</th>
+                  <th class="table__num">Business</th>
+                  <th class="table__num">Feasibility</th>
+                  <th class="table__num">AI Depth</th>
+                  <th class="table__num">Innovation</th>
+                  <th class="table__num">Cross-Sys</th>
+                  <th>Award</th>
+                  <th>Feedback</th>
+                </tr>
+              </thead>
+              <tbody id="recordsTbody"></tbody>
+            </table>
+          </div>
+
+          <div class="hint" id="recordsHint" role="status" aria-live="polite"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container footer__inner">
+        <div class="muted">
+          Local-only prototype. Data stored in your browser via <code>localStorage</code>.
+        </div>
+      </div>
+    </footer>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
