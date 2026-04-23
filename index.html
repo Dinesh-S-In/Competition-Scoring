@@ -57,65 +57,35 @@
     <main class="container">
       <!-- WELCOME / JUDGE SELECTION -->
       <section class="view is-active" id="view-welcome" data-view="welcome">
-        <div class="grid grid--2">
-          <div class="card card--hero">
-            <div class="chip">Premium Judging</div>
-            <h1 class="h1">Welcome, judge.</h1>
+        <div class="welcomePage">
+          <div class="card card--hero card--welcome">
+            <div class="chip">Scoring</div>
+            <h1 class="h1" id="welcomeTitle">Welcome, judge</h1>
             <p class="muted lead" id="eventDescription">
-              Choose your name and the first team to evaluate. After that, teams
-              follow in order until all eight are done — you cannot skip ahead.
+              Select your name, choose a team, then enter marks on the next page. After you submit, you return here. Pick any team, in any order. Each judge–team pair is saved only once.
             </p>
 
-            <div class="form form--stack">
+            <div class="form form--stack form--welcome">
               <label class="field">
                 <span class="field__label">Judge</span>
                 <select id="judgeSelect" class="input" required></select>
               </label>
 
-              <label class="field" id="startTeamField">
-                <span class="field__label">First team to score</span>
+              <label class="field">
+                <span class="field__label">Team</span>
                 <select id="teamSelect" class="input" required></select>
-                <div class="hint" id="startTeamHint" style="margin-top:4px;min-height:2.5em"></div>
               </label>
 
-              <p class="resumeBanner muted" id="resumeBanner" hidden></p>
-
-              <button id="startBtn" class="btn btn--primary" type="button">
-                Start scoring
-              </button>
+              <button id="startBtn" class="btn btn--primary" type="button">Continue to scoring</button>
               <div class="hint" id="welcomeHint" role="status" aria-live="polite"></div>
             </div>
           </div>
 
-          <div class="card card--info">
-            <h2 class="h2">How scoring works</h2>
-            <ul class="list">
-              <li>
-                <strong>Strict team order</strong> — e.g. start with Team 3, then
-                4→8, then 1→2. You must finish all eight for your name.
-              </li>
-              <li>
-                <strong>5 weighted criteria</strong> (0–10 each) with a live
-                weighted total.
-              </li>
-              <li>
-                <strong>Overall feedback</strong> and one award nomination per
-                team.
-              </li>
-              <li>
-                <strong>Local-first</strong> via localStorage; structured so you
-                can later swap to Supabase.
-              </li>
-            </ul>
-
-            <div class="callout">
-              <div class="callout__title">Tip</div>
-              <div class="callout__body">
-                You can customize the event title/description directly in
-                <code>app.js</code> (look for <code>APP_CONFIG</code>), or replace
-                these HTML blocks with your own later.
-              </div>
-            </div>
+          <div class="card card--judged" id="judgedBox" hidden>
+            <div class="kicker" id="judgedKicker">Your entries</div>
+            <h2 class="h2" id="judgedHeading">Teams you’ve judged</h2>
+            <p class="muted" id="judgedSub" style="margin-top:4px"></p>
+            <ul class="judgedList" id="judgedList"></ul>
           </div>
         </div>
       </section>
@@ -127,9 +97,9 @@
             <div>
               <div class="kicker" id="scoreKicker">Scoring</div>
               <div class="teamPill" id="teamPill" aria-label="Current team">Team —</div>
-              <div class="h2 h2--team" id="scoreContext">Current team</div>
+              <div class="h2 h2--team" id="scoreContext">—</div>
               <div class="muted" id="scoreContextMeta">
-                Every criterion uses the same 0–10 scale (see below).
+                Enter all criterion scores, your standout text, and award, then <strong>Submit</strong> to return to the welcome page.
               </div>
             </div>
 
@@ -179,12 +149,13 @@
 
           <div class="grid grid--2">
             <label class="field">
-              <span class="field__label">Overall feedback</span>
+              <span class="field__label">Standout moment <span class="tag-req" aria-label="required">*</span></span>
               <textarea
-                id="overallFeedback"
+                id="standoutField"
                 class="input textarea"
                 rows="5"
-                placeholder="Summarize strengths, risks, and next steps..."
+                required
+                placeholder="Required. What stood out for this team overall?"
               ></textarea>
             </label>
 
@@ -198,9 +169,7 @@
           </div>
 
           <div class="actions">
-            <button class="btn btn--primary" id="submitBtn" type="submit">
-              Submit &amp; Go to Next Team
-            </button>
+            <button class="btn btn--primary" id="submitBtn" type="submit">Submit</button>
             <button class="btn btn--ghost" id="resetBtn" type="button">
               Reset form
             </button>
@@ -226,25 +195,6 @@
 
           <div class="hint" id="scoreHint" role="status" aria-live="polite"></div>
         </form>
-      </section>
-
-      <!-- JUDGE COMPLETED ALL 8 TEAMS -->
-      <section class="view" id="view-complete" data-view="complete">
-        <div class="card card--complete">
-          <div class="complete__icon" aria-hidden="true">✓</div>
-          <h1 class="complete__title" id="completeTitle">All teams scored</h1>
-          <p class="complete__text muted" id="completeText">
-            You have submitted scores for all eight teams in your assigned order.
-          </p>
-          <div class="complete__actions">
-            <button class="btn btn--primary" id="completeToRecordsBtn" type="button">
-              View records
-            </button>
-            <button class="btn" id="completeToWelcomeBtn" type="button">
-              Back to welcome
-            </button>
-          </div>
-        </div>
       </section>
 
       <!-- SUBMISSION RECORDS -->
@@ -281,7 +231,7 @@
                   <th class="table__num">Innovation</th>
                   <th class="table__num">Cross-Sys</th>
                   <th>Award</th>
-                  <th>Feedback</th>
+                  <th>Standout moment</th>
                 </tr>
               </thead>
               <tbody id="recordsTbody"></tbody>

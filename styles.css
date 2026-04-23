@@ -331,6 +331,47 @@ body {
   display: grid;
   gap: 14px;
 }
+.tag-req {
+  color: var(--red);
+  font-weight: 700;
+}
+
+.welcomePage {
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.card--welcome {
+  padding: 26px;
+}
+.card--judged {
+  padding: 20px 22px;
+}
+.judgedList {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.judgedList__item {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  font-size: 0.88rem;
+  background: #fff;
+}
+.judgedList__team {
+  font-weight: 600;
+  color: var(--ink);
+}
+.judgedList__t {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--muted2);
+}
+
 .grid--2 {
   grid-template-columns: 1.1fr 0.9fr;
 }

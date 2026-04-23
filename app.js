@@ -9,7 +9,7 @@ const APP_CONFIG = {
   eventTitle: "Competition Scoring",
   eventSubtitle: "Fast, consistent judging with weighted criteria.",
   eventDescription:
-    "Choose the judge, then the first team to score. The app then moves you through the remaining teams in order until all eight are done.",
+    "Select judge and team, score on the next page, then submit to return here. Your entries for the selected judge are listed below.",
 
   storageKey: "judgeApp.submissions.v2",
 
@@ -239,88 +239,11 @@ function clearAllSubmissions() {
   saveSubmissions([]);
 }
 
-/** @type {string} one key per browser */
-const JUDGE_FLOW_KEY = "judgeApp.judgeFlow.v1";
-
-function loadFlowMap() {
-  try {
-    return JSON.parse(localStorage.getItem(JUDGE_FLOW_KEY) || "{}");
-  } catch {
-    return {};
-  }
-}
-
-function saveFlowMap(map) {
-  localStorage.setItem(JUDGE_FLOW_KEY, JSON.stringify(map));
-}
-
-function getStartTeamNum(judge) {
-  const n = loadFlowMap()[judge]?.startTeamNum;
-  return n != null && n >= 1 && n <= 8 ? n : null;
-}
-
-function setStartTeamNum(judge, n) {
-  const map = loadFlowMap();
-  map[judge] = { startTeamNum: clamp(parseInt(n, 10), 1, 8) };
-  saveFlowMap(map);
-}
-
-function clearJudgeFlow() {
-  localStorage.removeItem(JUDGE_FLOW_KEY);
-}
-
-/**
- * e.g. start 3 -> [3,4,5,6,7,8,1,2]
- * @param {number} startNum
- * @returns {number[]}
- */
-function buildTeamOrder(startNum) {
-  const a = [];
-  for (let i = 0; i < 8; i += 1) a.push(((startNum - 1 + i) % 8) + 1);
-  return a;
-}
-
-function getSubmissionCountForJudge(judge) {
-  return loadSubmissions().filter((s) => s.judge === judge).length;
-}
-
-function teamNameToNum(teamName) {
-  const m = String(teamName).match(/(\d+)/);
-  return m ? parseInt(m[1], 10) : 0;
-}
-
-/** First team in queue (for this judge) that has no submission yet, or null if all 8 done. */
-function getNextTeamForJudge(judge) {
-  let start = getStartTeamNum(judge);
-  if (start == null) {
-    if (getSubmissionCountForJudge(judge) > 0) start = 1; // legacy data: assume start at 1
-    else return null;
-  }
-  for (const n of buildTeamOrder(start)) {
-    const t = `Team ${n}`;
-    if (!hasSubmissionFor(judge, t)) return t;
-  }
-  return null;
-}
-
-function indexInQueue(judge, teamName) {
-  const start = getStartTeamNum(judge) ?? 1;
-  const order = buildTeamOrder(start);
-  const num = teamNameToNum(teamName);
-  if (!num) return -1;
-  return order.indexOf(num);
-}
-
-function syncSubmitButtonLabel() {
-  if (!els.submitBtn) return;
-  const { judge, team } = state.selection;
-  const idx = indexInQueue(judge, team);
-  if (idx < 0) {
-    els.submitBtn.textContent = "Submit score";
-    return;
-  }
-  if (idx < 7) els.submitBtn.textContent = "Submit & Go to Next Team";
-  else els.submitBtn.textContent = "Submit & Finish (all 8 teams)";
+function getSubmissionsForJudge(judge) {
+  if (!judge) return [];
+  return loadSubmissions()
+    .filter((s) => s.judge === judge)
+    .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
 }
 
 // ---------- App state ----------
@@ -334,7 +257,7 @@ const state = {
   // live draft scores
   draft: {
     scores: Object.fromEntries(APP_CONFIG.criteria.map((c) => [c.id, 0])),
-    overallFeedback: "",
+    standoutMoment: "",
     award: "none",
   },
 };
@@ -349,13 +272,16 @@ const els = {
   eventTitle: $("#eventTitle"),
   eventSubtitle: $("#eventSubtitle"),
   eventDescription: $("#eventDescription"),
+  welcomeTitle: $("#welcomeTitle"),
   judgeSelect: $("#judgeSelect"),
   teamSelect: $("#teamSelect"),
-  startTeamField: $("#startTeamField"),
-  startTeamHint: $("#startTeamHint"),
-  resumeBanner: $("#resumeBanner"),
   startBtn: $("#startBtn"),
   welcomeHint: $("#welcomeHint"),
+  judgedBox: $("#judgedBox"),
+  judgedKicker: $("#judgedKicker"),
+  judgedHeading: $("#judgedHeading"),
+  judgedSub: $("#judgedSub"),
+  judgedList: $("#judgedList"),
 
   // top bar
   topbarContext: $("#topbarContext"),
@@ -371,7 +297,7 @@ const els = {
   totalGrade: $("#totalGrade"),
   totalHint: $("#totalHint"),
   breakdownContainer: $("#breakdownContainer"),
-  overallFeedback: $("#overallFeedback"),
+  standoutField: $("#standoutField"),
   awardOptions: $("#awardOptions"),
   awardHint: $("#awardHint"),
   scoreForm: $("#scoreForm"),
@@ -391,10 +317,6 @@ const els = {
   recordsTbody: $("#recordsTbody"),
   recordsHint: $("#recordsHint"),
 
-  completeTitle: $("#completeTitle"),
-  completeText: $("#completeText"),
-  completeToRecordsBtn: $("#completeToRecordsBtn"),
-  completeToWelcomeBtn: $("#completeToWelcomeBtn"),
 };
 
 // ---------- Rendering ----------
@@ -427,7 +349,8 @@ function setTabEnabled(view, enabled) {
 function renderEventText() {
   els.eventTitle.textContent = APP_CONFIG.eventTitle;
   els.eventSubtitle.textContent = APP_CONFIG.eventSubtitle;
-  els.eventDescription.textContent = APP_CONFIG.eventDescription;
+  if (els.eventDescription) els.eventDescription.textContent = APP_CONFIG.eventDescription;
+  if (els.welcomeTitle) els.welcomeTitle.textContent = "Welcome, judge";
 }
 
 function fillSelect(selectEl, options, placeholder = "Select...") {
@@ -457,46 +380,52 @@ function setTopbarJudge(visible, judgeName) {
   els.topbarJudge.innerHTML = `<span class="tj-label">Judge</span>${escapeHtml(judgeName)}`;
 }
 
-function refreshWelcomeForJudge() {
+function renderWelcomeJudgedList() {
   const judge = els.judgeSelect?.value;
+  const subs = getSubmissionsForJudge(judge);
+  if (!els.judgedBox) return;
+
   if (!judge) {
-    if (els.startTeamField) els.startTeamField.hidden = false;
-    if (els.resumeBanner) els.resumeBanner.hidden = true;
-    if (els.startTeamHint) els.startTeamHint.textContent = "";
+    els.judgedBox.hidden = true;
+    if (els.welcomeTitle) els.welcomeTitle.textContent = "Welcome, judge";
     return;
   }
 
-  const count = getSubmissionCountForJudge(judge);
-  const next = getNextTeamForJudge(judge);
-  const start = getStartTeamNum(judge);
+  if (els.welcomeTitle) els.welcomeTitle.textContent = `Welcome, ${judge}`;
 
-  if (count === 0) {
-    if (els.startTeamField) els.startTeamField.hidden = false;
-    if (els.resumeBanner) els.resumeBanner.hidden = true;
-    if (els.teamSelect) els.teamSelect.disabled = false;
-    if (els.startTeamHint) {
-      els.startTeamHint.textContent =
-        "After this team, the app will continue in order (e.g. first Team 3 → then 4, 5, 6, 7, 8, 1, 2).";
-    }
-  } else {
-    if (els.startTeamField) els.startTeamField.hidden = true;
-    if (els.resumeBanner) {
-      els.resumeBanner.hidden = false;
-      if (next) {
-        const from = start != null ? `Queue from Team ${start} · ` : "";
-        els.resumeBanner.textContent = `${from}${count} of 8 submitted. Next: ${next}.`;
-      } else {
-        els.resumeBanner.textContent = `All 8 teams are scored for ${judge}.`;
-      }
-    }
+  if (subs.length === 0) {
+    els.judgedBox.hidden = true;
+    return;
+  }
+
+  els.judgedBox.hidden = false;
+  if (els.judgedHeading) els.judgedHeading.textContent = "Teams you’ve scored";
+  if (els.judgedSub) {
+    els.judgedSub.textContent = `${subs.length} submission${subs.length === 1 ? "" : "s"} for this judge on this device.`;
+  }
+  if (els.judgedList) {
+    els.judgedList.innerHTML = subs
+      .map(
+        (s) => `
+      <li class="judgedList__item">
+        <span class="judgedList__team">${escapeHtml(s.team)}</span>
+        · Weighted ${Number(s.total ?? 0).toFixed(1)}/10
+        · <span class="judgedList__t">${formatDateTime(s.submittedAt)}</span>
+      </li>`,
+      )
+      .join("");
   }
 }
 
 function renderWelcome() {
-  fillSelect(els.judgeSelect, APP_CONFIG.judges, "Choose a judge");
-  fillSelect(els.teamSelect, APP_CONFIG.teams, "First team to score…");
+  const prevJudge = els.judgeSelect?.value;
+  fillSelect(els.judgeSelect, APP_CONFIG.judges, "— Choose judge (e.g. Vaibhav Shah) —");
+  fillSelect(els.teamSelect, APP_CONFIG.teams, "— Choose team —");
+  if (prevJudge && APP_CONFIG.judges.includes(prevJudge)) {
+    els.judgeSelect.value = prevJudge;
+  }
   setHint(els.welcomeHint, "");
-  refreshWelcomeForJudge();
+  renderWelcomeJudgedList();
 }
 
 function renderAwardOptions() {
@@ -652,28 +581,26 @@ function renderScoreContext() {
   const { judge, team } = state.selection;
   setTopbarJudge(true, judge);
 
-  const q = indexInQueue(judge, team);
-  const pos = q >= 0 ? q + 1 : "—";
   if (els.teamPill) els.teamPill.textContent = team || "—";
-  if (els.scoreKicker) els.scoreKicker.textContent = `Scoring · ${pos} of 8 in your order`;
+  if (els.scoreKicker) els.scoreKicker.textContent = "Scoring";
   if (els.scoreContext) els.scoreContext.textContent = team || "—";
 
   const locked = hasSubmissionFor(judge, team);
   if (locked) {
     els.scoreContextMeta.textContent =
-      "A submission already exists for this judge–team pair. Use Back to welcome to continue your queue.";
+      "This team is already submitted for you. Use Back to welcome to pick another team.";
     els.submitBtn.disabled = true;
     setHint(
       els.scoreHint,
-      "This team is already submitted. Return to the welcome screen to resume the next team.",
+      "Already submitted. Go back to the welcome page and select a different team.",
       "warn",
     );
   } else {
-    els.scoreContextMeta.textContent = "Use the 0–10 scale on each card (rubric text below).";
+    els.scoreContextMeta.textContent =
+      "Use the 0–10 scale on each card, then required Standout moment, award, and Submit.";
     els.submitBtn.disabled = false;
     setHint(els.scoreHint, "");
   }
-  syncSubmitButtonLabel();
 }
 
 function renderSuccessState(show) {
@@ -721,7 +648,7 @@ function renderRecords() {
       <td class="table__num">${cell("in")}</td>
       <td class="table__num">${cell("cs")}</td>
       <td>${humanizeAward(s.award)}</td>
-      <td class="muted">${(s.overallFeedback || "").slice(0, 180)}${(s.overallFeedback || "").length > 180 ? "…" : ""}</td>
+      <td class="muted">${(s.standoutMoment || s.overallFeedback || "").slice(0, 180)}${(s.standoutMoment || s.overallFeedback || "").length > 180 ? "…" : ""}</td>
     `;
     els.recordsTbody.appendChild(tr);
   }
@@ -745,10 +672,9 @@ function startScoring(judge, team) {
   renderCriteria();
   renderAwardOptions();
 
-  els.overallFeedback.value = "";
+  if (els.standoutField) els.standoutField.value = "";
   renderTotal();
   renderSuccessState(false);
-  syncSubmitButtonLabel();
 }
 
 function goWelcome() {
@@ -760,23 +686,28 @@ function goWelcome() {
   renderWelcome();
 }
 
-function showJudgeCompletion(judge) {
-  if (els.completeTitle) {
-    els.completeTitle.textContent = "All team scores are in";
-  }
-  if (els.completeText) {
-    els.completeText.textContent = `${judge}, you have submitted scores for all eight teams in your assigned order. Thank you.`;
-  }
-  setTopbarJudge(true, judge);
+/**
+ * After a successful submit: back to welcome with the same judge selected
+ * and the “teams you’ve judged” list updated.
+ * @param {string} judge
+ */
+function returnToWelcomeAfterScoring(judge) {
+  state.selection.team = "";
+  state.selection.judge = "";
+  setTopbarJudge(false);
   setTabEnabled("score", false);
-  renderSuccessState(false);
-  setView("complete");
+  setView("welcome");
+  fillSelect(els.judgeSelect, APP_CONFIG.judges, "— Choose judge (e.g. Vaibhav Shah) —");
+  fillSelect(els.teamSelect, APP_CONFIG.teams, "— Choose team —");
+  if (judge && APP_CONFIG.judges.includes(judge)) els.judgeSelect.value = judge;
+  setHint(els.welcomeHint, "Score saved. You’re back on the welcome page — choose a team to continue.", "good");
+  renderWelcomeJudgedList();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function resetDraft() {
   state.draft.scores = Object.fromEntries(APP_CONFIG.criteria.map((c) => [c.id, 0]));
-  state.draft.overallFeedback = "";
+  state.draft.standoutMoment = "";
   state.draft.award = "none";
 }
 
@@ -798,7 +729,7 @@ function exportCsv() {
     "total",
     "grade",
     "award",
-    "overallFeedback",
+    "standoutMoment",
     ...criteriaCols,
   ];
 
@@ -811,7 +742,7 @@ function exportCsv() {
       Number(s.total ?? 0).toFixed(1),
       s.grade ?? gradeFromTotal(s.total ?? 0),
       humanizeAward(s.award),
-      s.overallFeedback ?? "",
+      s.standoutMoment ?? s.overallFeedback ?? "",
     ];
 
     for (const c of APP_CONFIG.criteria) {
@@ -835,7 +766,7 @@ function initNav() {
       if (btn.disabled) return;
 
       if (view === "welcome") {
-        if (state.view !== "welcome" && (state.view === "score" || state.view === "complete")) {
+        if (state.view !== "welcome" && state.view === "score") {
           if (
             !confirm(
               "Return to the welcome screen? Unsaved work on the current team will be lost. Submitted teams stay saved.",
@@ -869,61 +800,46 @@ function initNav() {
 function initWelcome() {
   els.startBtn.addEventListener("click", () => {
     const judge = els.judgeSelect.value;
+    const team = els.teamSelect.value;
     if (!judge) {
       setHint(els.welcomeHint, "Please choose a judge.", "warn");
       return;
     }
-
-    const count = getSubmissionCountForJudge(judge);
-    if (count === 0) {
-      const startNum = teamNameToNum(els.teamSelect.value);
-      if (!startNum) {
-        setHint(els.welcomeHint, "Choose the first team to score (Team 1 through Team 8).", "warn");
-        return;
-      }
-      setStartTeamNum(judge, startNum);
-      const first = `Team ${startNum}`;
-      if (hasSubmissionFor(judge, first)) {
-        setHint(els.welcomeHint, "That team already has a submission for this judge.", "warn");
-        return;
-      }
-      resetDraft();
-      startScoring(judge, first);
+    if (!team) {
+      setHint(els.welcomeHint, "Please choose a team.", "warn");
       return;
     }
-
-    const next = getNextTeamForJudge(judge);
-    if (!next) {
+    if (hasSubmissionFor(judge, team)) {
       setHint(
         els.welcomeHint,
-        "All 8 teams are already scored for this judge. Check Records, or pick another judge.",
-        "good",
+        `You already submitted a score for ${judge} × ${team}. Choose another team.`,
+        "warn",
       );
       return;
     }
     resetDraft();
-    startScoring(judge, next);
+    startScoring(judge, team);
   });
 
   els.judgeSelect.addEventListener("change", () => {
-    refreshWelcomeForJudge();
     setHint(els.welcomeHint, "");
+    renderWelcomeJudgedList();
   });
-  els.teamSelect.addEventListener("change", () => {
-    if (getSubmissionCountForJudge(els.judgeSelect.value) === 0) setHint(els.welcomeHint, "");
-  });
+  els.teamSelect.addEventListener("change", () => setHint(els.welcomeHint, ""));
 }
 
 function initScoring() {
-  els.overallFeedback.addEventListener("input", () => {
-    state.draft.overallFeedback = els.overallFeedback.value;
-  });
+  if (els.standoutField) {
+    els.standoutField.addEventListener("input", () => {
+      state.draft.standoutMoment = els.standoutField.value;
+    });
+  }
 
   els.resetBtn.addEventListener("click", () => {
     resetDraft();
     renderCriteria();
     renderAwardOptions();
-    els.overallFeedback.value = "";
+    if (els.standoutField) els.standoutField.value = "";
     renderTotal();
     renderSuccessState(false);
     setHint(els.scoreHint, "Form reset.", "good");
@@ -959,6 +875,14 @@ function initScoring() {
       return;
     }
 
+    const sm = String(els.standoutField?.value || state.draft.standoutMoment || "").trim();
+    if (!sm) {
+      setHint(els.scoreHint, "Standout moment is required.", "bad");
+      els.standoutField?.focus();
+      return;
+    }
+    state.draft.standoutMoment = sm;
+
     const total = computeWeightedTotal();
     const submission = {
       id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()),
@@ -970,29 +894,12 @@ function initScoring() {
       scores: { ...state.draft.scores },
       total,
       grade: gradeFromTotal(total),
-      overallFeedback: state.draft.overallFeedback || "",
+      standoutMoment: sm,
       award: state.draft.award || "none",
     };
 
     addSubmission(submission);
-    setHint(els.scoreHint, "Saved locally.", "good");
-
-    const next = getNextTeamForJudge(judge);
-    if (next) {
-      resetDraft();
-      state.selection.team = next;
-      state.selection.judge = judge;
-      renderSuccessState(false);
-      renderScoreContext();
-      renderCriteria();
-      renderAwardOptions();
-      if (els.overallFeedback) els.overallFeedback.value = "";
-      renderTotal();
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
-
-    showJudgeCompletion(judge);
+    returnToWelcomeAfterScoring(judge);
   });
 
   els.successToRecordsBtn.addEventListener("click", () => {
@@ -1006,31 +913,18 @@ function initScoring() {
     goWelcome();
   });
 
-  if (els.completeToRecordsBtn) {
-    els.completeToRecordsBtn.addEventListener("click", () => {
-      setTopbarJudge(false);
-      renderRecords();
-      setView("records");
-    });
-  }
-  if (els.completeToWelcomeBtn) {
-    els.completeToWelcomeBtn.addEventListener("click", () => {
-      goWelcome();
-    });
-  }
 }
 
 function initRecords() {
   els.exportCsvBtn.addEventListener("click", exportCsv);
 
   els.clearAllBtn.addEventListener("click", () => {
-    const ok = confirm("Clear ALL local submissions and team-order settings? This cannot be undone.");
+    const ok = confirm("Clear ALL local submissions? This cannot be undone.");
     if (!ok) return;
     clearAllSubmissions();
-    clearJudgeFlow();
     renderRecords();
     goWelcome();
-    setHint(els.recordsHint, "Cleared all local submissions and queue settings.", "good");
+    setHint(els.recordsHint, "Cleared all local submissions.", "good");
   });
 }
 
