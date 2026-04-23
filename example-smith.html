@@ -71,6 +71,41 @@
               <div class="hint" id="welcomeHint" role="status" aria-live="polite"></div>
             </div>
           </div>
+
+          <div class="card welcomeRecords" id="welcomeRecordsCard">
+            <div class="recordsHeader">
+              <div>
+                <div class="kicker">Your marks</div>
+                <h2 class="h2" style="margin: 0 0 4px">Submission records</h2>
+                <p class="muted" id="welcomeRecordsMeta" style="margin: 0; font-size: 0.9rem"></p>
+              </div>
+              <div class="recordsHeader__actions">
+                <button type="button" class="btn" id="exportMyCsvBtn">Download CSV for Excel</button>
+              </div>
+            </div>
+            <div class="tableWrap" role="region" aria-label="Your submissions" tabindex="0">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>submitted</th>
+                    <th>judge</th>
+                    <th>team</th>
+                    <th class="table__num">total</th>
+                    <th>grade</th>
+                    <th>award</th>
+                    <th>overall feedback</th>
+                    <th class="table__num" title="Business Impact, 0–10">Business</th>
+                    <th class="table__num" title="Feasibility &amp; Scalability, 0–10">Feasibility</th>
+                    <th class="table__num" title="AI Depth, 0–10">AI depth</th>
+                    <th class="table__num" title="Innovation, 0–10">Innovation</th>
+                    <th class="table__num" title="Cross-System Collaboration, 0–10">Cross-syst</th>
+                  </tr>
+                </thead>
+                <tbody id="welcomeRecordsTbody"></tbody>
+              </table>
+            </div>
+            <p class="hint" id="welcomeExportHint" role="status" aria-live="polite" style="margin-top: 8px"></p>
+          </div>
         </div>
       </section>
 

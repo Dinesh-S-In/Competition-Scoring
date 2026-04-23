@@ -1118,6 +1118,18 @@ code {
   color: var(--muted2);
 }
 
+.welcomeRecords {
+  margin-top: 20px;
+}
+.welcomeRecords .table__text {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .footer {
   padding: 20px 0 28px;
   position: relative;

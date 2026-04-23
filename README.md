@@ -2,6 +2,8 @@
 
 Vanilla HTML/CSS/JS, `styles.css`, and one shared `app.js`. There is no JavaScript build step. Each judge is meant to get **their own HTML page** (e.g. `example-smith.html`, cloned from the sample) with their name set in a small script block. The public **index** page is a minimal home with the current sample **Example SMITH**—there is no judge name picker in the app.
 
+On each judge page’s **Welcome** screen, a **Submission records** table lists that judge’s teams, weighted total, grade, award, standout / overall feedback text, and each criterion score (0–10). **Download CSV for Excel** exports the same columns with a UTF-8 BOM for Excel. The organiser’s repo still receives merged rows in **`data/submissions.json`** when `/api/submit` succeeds on Vercel.
+
 - **Scoring + Git merge:** [Vercel](#deploy-on-vercel) (run `npx vercel` or connect the repo) so the `/api/submit` serverless route can run.
 - **Static only:** [GitHub Pages](#github-pages) can host the files, but **submissions will not** be written back into the repository from the browser. Use Vercel if you need the combined file in `data/submissions.json`.
 

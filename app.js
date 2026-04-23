@@ -184,6 +184,24 @@ function formatDateTime(iso) {
   });
 }
 
+function escapeCsv(value) {
+  const s = String(value ?? "");
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function downloadTextFile(filename, text) {
+  const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // ---------- Data layer (localStorage; server merge via /api/submit) ----------
 
 function getStorageKey() {
@@ -288,6 +306,11 @@ const els = {
   resetBtn: $("#resetBtn"),
   scoreHint: $("#scoreHint"),
   backToWelcomeBtn: $("#backToWelcomeBtn"),
+  welcomeRecordsCard: $("#welcomeRecordsCard"),
+  welcomeRecordsMeta: $("#welcomeRecordsMeta"),
+  welcomeRecordsTbody: $("#welcomeRecordsTbody"),
+  exportMyCsvBtn: $("#exportMyCsvBtn"),
+  welcomeExportHint: $("#welcomeExportHint"),
 };
 
 // ---------- Judge name resolution ----------
@@ -366,12 +389,129 @@ function setTopbarJudge(visible, judgeName) {
   els.topbarJudge.innerHTML = `<span class="tj-label">Judge</span>${escapeHtml(judgeName)}`;
 }
 
+function getStandoutOrLegacy(s) {
+  if (!s) return "";
+  return String(s.standoutMoment ?? s.overallFeedback ?? "").trim();
+}
+
+function cellCriterionScore(s, id) {
+  const sc = s && s.scores;
+  if (!sc || sc[id] == null || sc[id] === "") return "—";
+  return String(sc[id]);
+}
+
+/**
+ * This judge’s submissions only (storage is per judge page). Visible on the Welcome table + CSV.
+ */
+function renderWelcomeRecordsTable() {
+  if (!els.welcomeRecordsTbody) return;
+  const mine = getJudgeName();
+  if (!mine) {
+    if (els.welcomeRecordsCard) els.welcomeRecordsCard.hidden = true;
+    return;
+  }
+  if (els.welcomeRecordsCard) els.welcomeRecordsCard.hidden = false;
+
+  const rows = loadSubmissions().filter((s) => s && s.judge === mine);
+  rows.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+
+  if (els.welcomeRecordsMeta) {
+    els.welcomeRecordsMeta.textContent = `${rows.length} submission${
+      rows.length === 1 ? "" : "s"
+    } for this page (this browser). The same rows are also merged into the organiser’s Git file data/submissions.json when Vercel and GitHub are configured. Use “Download CSV for Excel” to open the same columns in Excel.`;
+  }
+
+  els.welcomeRecordsTbody.innerHTML = "";
+  if (rows.length === 0) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="12" class="muted" style="padding: 16px 12px">No marks submitted yet. Choose a team and score above to add a row here.</td>`;
+    els.welcomeRecordsTbody.appendChild(tr);
+    return;
+  }
+
+  for (const s of rows) {
+    const g = s.grade ?? gradeFromTotal(s.total ?? 0);
+    const feedback = getStandoutOrLegacy(s);
+    const feedbackCell =
+      feedback.length > 100 ? `${escapeHtml(feedback.slice(0, 100))}…` : escapeHtml(feedback);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${formatDateTime(s.submittedAt)}</td>
+      <td>${escapeHtml(s.judge || "")}</td>
+      <td><strong>${escapeHtml(s.team || "")}</strong></td>
+      <td class="table__num"><strong>${Number(s.total ?? 0).toFixed(1)}</strong></td>
+      <td class="table__grade" title="${escapeHtml(String(g))}">${escapeHtml(String(g))}</td>
+      <td>${escapeHtml(humanizeAward(s.award))}</td>
+      <td class="table__text" title="${escapeHtml(feedback)}">${feedbackCell || "—"}</td>
+      <td class="table__num">${cellCriterionScore(s, "bi")}</td>
+      <td class="table__num">${cellCriterionScore(s, "fs")}</td>
+      <td class="table__num">${cellCriterionScore(s, "ai")}</td>
+      <td class="table__num">${cellCriterionScore(s, "in")}</td>
+      <td class="table__num">${cellCriterionScore(s, "cs")}</td>
+    `;
+    els.welcomeRecordsTbody.appendChild(tr);
+  }
+}
+
+function exportMySubmissionsToCsv() {
+  if (!isJudgePage() || !getJudgeName()) return;
+  const mine = getJudgeName();
+  const rows = loadSubmissions().filter((s) => s && s.judge === mine);
+  rows.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+
+  const critHeaders = APP_CONFIG.criteria.map(
+    (c) => `${c.shortName || c.name} (0-10)`,
+  );
+  const header = [
+    "submitted",
+    "judge",
+    "team",
+    "total",
+    "grade",
+    "award",
+    "overallFeedback",
+    ...critHeaders,
+  ];
+
+  const lines = [header.map(escapeCsv).join(",")];
+  for (const s of rows) {
+    const g = s.grade ?? gradeFromTotal(s.total ?? 0);
+    const row = [
+      s.submittedAt,
+      s.judge,
+      s.team,
+      Number(s.total ?? 0).toFixed(1),
+      g,
+      humanizeAward(s.award),
+      getStandoutOrLegacy(s),
+    ];
+    for (const c of APP_CONFIG.criteria) {
+      row.push(String(s.scores?.[c.id] ?? ""));
+    }
+    lines.push(row.map(escapeCsv).join(","));
+  }
+
+  const safeName = String(mine).replace(/[\\/:"*?<>|]/g, "_");
+  const date = new Date().toISOString().slice(0, 10);
+  const filename = `submissions_${safeName}_${date}.csv`;
+  const bom = "\uFEFF";
+  const content = bom + lines.join("\r\n");
+  downloadTextFile(filename, content);
+  setHint(
+    els.welcomeExportHint,
+    `Downloaded ${rows.length} row(s) as ${filename} — open in Microsoft Excel. Data is the same as in the table and in the repo’s data/submissions.json after a successful server sync.`,
+    "good",
+  );
+}
+
 function renderWelcome() {
   if (els.teamSelect) {
     fillSelect(els.teamSelect, APP_CONFIG.teams, "— Choose team —");
   }
   setHint(els.welcomeHint, "");
+  setHint(els.welcomeExportHint, "");
   renderEventText();
+  renderWelcomeRecordsTable();
 }
 
 function renderAwardOptions() {
@@ -691,6 +831,16 @@ function initWelcome() {
   }
   if (els.teamSelect) {
     els.teamSelect.addEventListener("change", () => setHint(els.welcomeHint, ""));
+  }
+  if (els.exportMyCsvBtn) {
+    els.exportMyCsvBtn.addEventListener("click", () => {
+      const n = loadSubmissions().filter((s) => s && s.judge === getJudgeName()).length;
+      if (n === 0) {
+        setHint(els.welcomeExportHint, "No submissions to export yet.", "warn");
+        return;
+      }
+      exportMySubmissionsToCsv();
+    });
   }
 }
 
